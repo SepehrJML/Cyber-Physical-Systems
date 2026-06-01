@@ -22,8 +22,9 @@ It also expects three kinds of jsons:
   "timestamp": 1717200000890
 }
 
-And it sends this packet only in response of "click" requests:
+And it sends this packet only in response of "click" or "scroll" requests:
 {
   "status": "ACK",
+  "type": "scroll/click"
   "timestamp": 1717200000550
 }
