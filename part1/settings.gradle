@@ -1,6 +1,9 @@
 pluginManagement {
     repositories {
         maven { url 'https://maven.myket.ir' }
+        maven { url 'https://mirror.sharif.edu/nexus/content/groups/public/' }
+        maven { url 'https://dl.devneeds.ir/android/repository/' }
+        gradlePluginPortal()
     }
 }
 
@@ -12,6 +15,8 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         maven { url 'https://maven.myket.ir' }
+        maven { url 'https://mirror.sharif.edu/nexus/content/groups/public/' }
+        maven { url 'https://dl.devneeds.ir/android/repository/' }
     }
 }
 

@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.tst2.network.UdpClient
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -31,6 +32,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun AirMouseApp() {
     var ipAddress by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    var udpClient by remember {
+        mutableStateOf<UdpClient?>(null)
+    }
     var isRunning by remember { mutableStateOf(false) }
     var showCalibrationDialog by remember { mutableStateOf(false) }
 
@@ -109,12 +114,41 @@ fun AirMouseApp() {
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
             Button(
-                onClick = { isRunning = !isRunning },
+                onClick = {
+                    udpClient = UdpClient(ipAddress)
+                    isRunning = !isRunning },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isRunning) Color.Red else Color.Green
                 )
             ) {
                 Text(if (isRunning) "STOP MOUSE" else "START MOUSE")
+            }
+
+            Button( // test button for move
+                onClick = {
+
+                    scope.launch {
+
+                        udpClient?.sendMove(
+                            50f,
+                            0f
+                        )
+                    }
+                }
+            ) {
+                Text("TEST MOVE")
+            }
+
+            Button( // test button for click
+                onClick = {
+
+                    scope.launch {
+
+                        udpClient?.sendClick()
+                    }
+                }
+            ) {
+                Text("TEST CLICK")
             }
 
             Button(onClick = {
