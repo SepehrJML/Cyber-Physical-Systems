@@ -1,0 +1,29 @@
+The server expects all packets to be separated with a \n character
+It also expects three kinds of jsons:
+1. Move of mouse
+{
+  "type": "move",            // type: string description: 
+  "dx": 4.5,                 // type: float  description: positive -> right, negative -> left
+  "dy": -2.1,                // type: float  description: positive -> down, negative -> up
+  "timestamp": 1717200000123 // type: long   description: exact time this was created on the client in ms
+}
+
+2. Click
+{
+  "type": "click",
+  "button": "left",          // type: string description: left -> left click, right -> right click
+  "timestamp": 1717200000550
+}
+
+3. Scroll
+{
+  "type": "scroll",
+  "scroll_dir": 1,           // type: integer description: -1 -> scroll down, +1 -> scroll up
+  "timestamp": 1717200000890
+}
+
+And it sends this packet only in response of "click" requests:
+{
+  "status": "ACK",
+  "timestamp": 1717200000550
+}
