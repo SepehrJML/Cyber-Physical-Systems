@@ -123,7 +123,7 @@ fun AirMouseApp() {
             ) {
                 Text(if (isRunning) "STOP MOUSE" else "START MOUSE")
             }
-
+            /*
             Button( // test button for move
                 onClick = {
 
@@ -149,7 +149,7 @@ fun AirMouseApp() {
                 }
             ) {
                 Text("TEST CLICK")
-            }
+            } */
 
             Button(onClick = {
                 // سنسورها برای کالیبراسیون باید فعال باشند تا دیتای لحظه‌ای دریافت شود
@@ -236,6 +236,7 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
 
                                     sensorManager.isCollectingGyroSamples = false
                                     isGyroCalibrating = false
+                                    sensorManager.computeGyroBiasFromSamples()
                                     gyroStatusText = "Done! Saved ${sensorManager.gyroSamples.size} raw samples for Member 2."
                                 }
                             },
@@ -293,8 +294,79 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
                             )
                         }
                     }
+                    Button(
+                        onClick = {
+                            // maybe check that all 6 positions are recorded (not "Not recorded")
+                            sensorManager.computeAccelCalibration()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Compute Accel Calibration")
+                    }
                 }
+                // inside Column in CalibrationScreen, after the accel card
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // 3. Magnetometer calibration (5s)
+                var magStatusText by remember { mutableStateOf("Ready. Rotate phone in all directions.") }
+                var isMagCalibrating by remember { mutableStateOf(false) }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            "3. Magnetometer Calibration (5s)",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Move phone in a \"figure 8\" and rotate in all directions for 5 seconds.",
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    isMagCalibrating = true
+                                    sensorManager.isCollectingMagSamples = true
+                                    // reset min/max so this run is clean
+                                    sensorManager.magMin = floatArrayOf(
+                                        Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE
+                                    )
+                                    sensorManager.magMax = floatArrayOf(
+                                        Float.MIN_VALUE, Float.MIN_VALUE, Float.MIN_VALUE
+                                    )
+
+                                    for (i in 5 downTo 1) {
+                                        magStatusText = "Collecting mag data... $i s left."
+                                        delay(1000)
+                                    }
+
+                                    // compute offset/scale from the collected min/max
+                                    sensorManager.computeMagCalibration()
+                                    isMagCalibrating = false
+                                    sensorManager.isCollectingMagSamples = false
+                                    magStatusText = "Mag calibration done."
+                                }
+                            },
+                            enabled = !isMagCalibrating,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isMagCalibrating) "Recording..." else "Calibrate Mag (Collect 5s)")
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = magStatusText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
                 Spacer(modifier = Modifier.height(16.dp))
                 Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("CLOSE & BACK TO MOUSE")
