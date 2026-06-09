@@ -55,13 +55,24 @@ fun AirMouseApp() {
             magData = mag
         }
     }
+    var x by remember { mutableStateOf(0f) }
+    var y by remember { mutableStateOf(0f) }
 
-    LaunchedEffect(isRunning) {
+
+
+
+    LaunchedEffect(isRunning,gyroData) {
         if (isRunning) {
             sensorManager.startListening()
         } else {
             sensorManager.stopListening()
         }
+        val gain = 10f
+        x += -gyroData[2] * gain
+        y += -gyroData[0] * gain
+
+        x = x.coerceIn(-110f, 110f)
+        y = y.coerceIn(-110f, 110f)
     }
 
     Column(
@@ -95,7 +106,7 @@ fun AirMouseApp() {
         ) {
             Box(
                 modifier = Modifier
-                    .offset(x = (gyroData[2] * 10).dp, y = (gyroData[0] * 10).dp)
+                    .offset(x = x.dp, y = y.dp)
                     .size(30.dp)
                     .background(if (clickStatus == "CLICKED!") Color.Red else Color.Green)
             )
