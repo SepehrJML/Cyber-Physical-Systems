@@ -61,12 +61,15 @@ fun AirMouseApp() {
 
 
 
-    LaunchedEffect(isRunning,gyroData) {
+    LaunchedEffect(isRunning) {
         if (isRunning) {
             sensorManager.startListening()
         } else {
             sensorManager.stopListening()
         }
+
+    }
+    LaunchedEffect(gyroData) {
         val gain = 10f
         x += -gyroData[2] * gain
         y += -gyroData[0] * gain
