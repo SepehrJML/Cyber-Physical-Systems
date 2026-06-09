@@ -53,6 +53,13 @@ fun AirMouseApp() {
             accelData = accel
             gyroData = gyro
             magData = mag
+        },
+        onClick = {
+            clickStatus = "CLICKED!"
+            scope.launch {
+                delay(200)
+                clickStatus = "NO CLICK"
+            }
         }
     }
     var x by remember { mutableStateOf(0f) }

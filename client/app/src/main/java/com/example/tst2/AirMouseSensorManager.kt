@@ -9,7 +9,8 @@ import android.os.Trace
 
 class AirMouseSensorManager(
     context: Context,
-    private val onSensorDataUpdated: (accel: FloatArray, gyro: FloatArray, mag: FloatArray) -> Unit
+    private val onSensorDataUpdated: (accel: FloatArray, gyro: FloatArray, mag: FloatArray) -> Unit,
+    private val onClick: () -> Unit
 ) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -22,6 +23,11 @@ class AirMouseSensorManager(
             ?: sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
     private val magnetometerUncalibrated: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED)
     private val gravitySensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
+
+    //click detection variables
+    private var lastClickTime = 0L
+    private val clickThreshold = 2.5f
+    private val clickCooldownMs = 400L
 
     var rawAccel = FloatArray(3)
     var rawGyro = FloatArray(3)
@@ -106,6 +112,14 @@ class AirMouseSensorManager(
                 // اگر دکمه کالیبراسیون زده شده باشد، دیتای خام به مدت ۳ ثانیه در لیست ذخیره می‌شود
                 if (isCollectingGyroSamples) {
                     gyroSamples.add(rawGyro.clone())
+                }
+
+                val now = System.currentTimeMillis()
+                val yRate = rawGyro[1] 
+
+                if (kotlin.math.abs(yRate) > clickThreshold && now - lastClickTime > clickCooldownMs) {
+                    lastClickTime = now
+                    onClick()
                 }
 
             }
