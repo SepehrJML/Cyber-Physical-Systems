@@ -77,17 +77,17 @@ class AirMouseSensorManager(
         when (event.sensor.type) {
             Sensor.TYPE_ACCELEROMETER -> {
                 val raw = event.values.clone()
+                rawAccel = raw
                 Log.d("AirMouse0", "GYRO EVENT: [${rawGyro[0]}, ${rawGyro[1]}, ${rawGyro[2]}]")
                 // subtract offset and divide by scale
                 correctedAccel = floatArrayOf(
-                    (raw[0] - accelOffset[0]) / accelScale[0],
-                    (raw[1] - accelOffset[1]) / accelScale[1],
-                    (raw[2] - accelOffset[2]) / accelScale[2]
+                    (rawAccel[0] - accelOffset[0]) / accelScale[0],
+                    (rawAccel[1] - accelOffset[1]) / accelScale[1],
+                    (rawAccel[2] - accelOffset[2]) / accelScale[2]
                 )
-
                 // correctedAccel for further use
 
-                rawAccel = raw
+
             }
             Sensor.TYPE_GYROSCOPE -> { // Change to TYPE_GYROSCOPE_UNCALIBRATED for wired connection
 
@@ -113,13 +113,13 @@ class AirMouseSensorManager(
                 val raw = floatArrayOf(event.values[0], event.values[1], event.values[2])
                 rawMag = raw
                 if (isCollectingMagSamples)
-                    updateMagCalibration(raw)
+                    updateMagCalibration(rawMag)
 
                 // apply calibration
                 correctedMag = floatArrayOf(
-                    (raw[0] - magOffset[0]) * magScale[0],
-                    (raw[1] - magOffset[1]) * magScale[1],
-                    (raw[2] - magOffset[2]) * magScale[2]
+                    (rawMag[0] - magOffset[0]) * magScale[0],
+                    (rawMag[1] - magOffset[1]) * magScale[1],
+                    (rawMag[2] - magOffset[2]) * magScale[2]
                 )
 
                 // if you want UI/fusion to use calibrated values:
@@ -131,7 +131,7 @@ class AirMouseSensorManager(
         }
 
         // به‌روزرسانی زنده مقادیر در رابط کاربری
-        onSensorDataUpdated(rawAccel, rawGyro, rawMag)
+        onSensorDataUpdated(correctedAccel, correctedGyro, correctedMag)
 
         Trace.endSection()
     }
