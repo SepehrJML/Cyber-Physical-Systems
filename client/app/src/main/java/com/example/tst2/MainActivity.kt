@@ -45,23 +45,33 @@ fun AirMouseApp() {
 
     var clickStatus by remember { mutableStateOf("NO CLICK") }
     var scrollStatus by remember { mutableStateOf("NO SCROLL") }
+    var yaw by remember { mutableStateOf(0f) }
+    var pitch by remember { mutableStateOf(0f) }
+    var roll by remember { mutableStateOf(0f) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val sensorManager = remember {
-        AirMouseSensorManager(context) { accel, gyro, mag ->
-            accelData = accel
-            gyroData = gyro
-            magData = mag
-        },
-        onClick = {
-            clickStatus = "CLICKED!"
-            scope.launch {
-                delay(200)
-                clickStatus = "NO CLICK"
+        AirMouseSensorManager(
+            context = context,
+            onSensorDataUpdated = { accel, gyro, mag, yawIn, pitchIn,rollIn ->
+                accelData = accel
+                gyroData = gyro
+                magData = mag
+                yaw = yawIn
+                pitch = pitchIn
+                roll = rollIn
+            },
+            onClick = {
+                clickStatus = "CLICKED!"
+                scope.launch {
+                    delay(200)
+                    clickStatus = "NO CLICK"
+                }
             }
-        }
+        )
     }
+
     var x by remember { mutableStateOf(0f) }
     var y by remember { mutableStateOf(0f) }
 
@@ -76,14 +86,17 @@ fun AirMouseApp() {
         }
 
     }
-    LaunchedEffect(gyroData) {
-        val gain = 10f
-        x += -gyroData[2] * gain
-        y += -gyroData[0] * gain
+    /*
+    LaunchedEffect(yawRateKState,pitchRateKState) {
+        val gain = 1f
+        x += -yawRateKState * gain
+        y += -pitchRateKState * gain
 
         x = x.coerceIn(-110f, 110f)
         y = y.coerceIn(-110f, 110f)
     }
+    */
+
 
     Column(
         modifier = Modifier
@@ -116,7 +129,7 @@ fun AirMouseApp() {
         ) {
             Box(
                 modifier = Modifier
-                    .offset(x = x.dp, y = y.dp)
+                    .offset(x = (-yaw*50 ).dp, y = (-roll*50).dp)
                     .size(30.dp)
                     .background(if (clickStatus == "CLICKED!") Color.Red else Color.Green)
             )
@@ -177,6 +190,7 @@ fun AirMouseApp() {
                 if (!isRunning) {
                     sensorManager.startListening()
                 }
+                sensorManager.setReferenceOrientation()
                 showCalibrationDialog = true
             }) {
                 Text("CALIBRATE")

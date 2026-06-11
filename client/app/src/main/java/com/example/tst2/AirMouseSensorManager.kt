@@ -9,7 +9,14 @@ import android.os.Trace
 
 class AirMouseSensorManager(
     context: Context,
-    private val onSensorDataUpdated: (accel: FloatArray, gyro: FloatArray, mag: FloatArray) -> Unit,
+    private val onSensorDataUpdated: (
+        accel: FloatArray,
+        gyro: FloatArray,
+        mag: FloatArray,
+        yaw: Float,
+        pitch: Float,
+        currentRoll: Float
+    ) -> Unit,
     private val onClick: () -> Unit
 ) : SensorEventListener {
 
@@ -26,8 +33,8 @@ class AirMouseSensorManager(
 
     //click detection variables
     private var lastClickTime = 0L
-    private val clickThreshold = 2.5f
-    private val clickCooldownMs = 400L
+    private val clickThreshold = 5f
+    private val clickCooldownMs = 500L
 
     var rawAccel = FloatArray(3)
     var rawGyro = FloatArray(3)
@@ -57,15 +64,66 @@ class AirMouseSensorManager(
     var magOffset = floatArrayOf(0f, 0f, 0f)
     var magScale  = floatArrayOf(1f, 1f, 1f)
 
+    // Complementary filter state (angles in radians)
+    var rollCF = 0f   // rotation around X
+    var pitchCF = 0f  // rotation around Y
+    var yawCF = 0f   // new yaw angle
+    // Optional: reference pose for relative angles
+    var yaw0 = 0f
+    var pitch0Ref = 0f
+    var roll0Ref = 0f
+    var hasReference = false
+
+    fun setReferenceOrientation() {
+        roll0Ref = rollCF
+        pitch0Ref = pitchCF
+        yaw0 = yawCF
+        hasReference = true
+    }
+    private var lastTimestampNs: Long? = null
+    var currentYaw = 0f
+    var currentPitch = 0f
+    var currentRoll = 0f
+    private fun updateComplementary(
+        dt: Float,
+        gx: Float, gy: Float, gz: Float,  // rad/s (gx around X, gy around Y, gz around Z)
+        ax: Float, ay: Float, az: Float
+    ) {
+        // 1) integrate gyro for roll/pitch (simple integration)
+        val rollGyro  = rollCF  + gx * dt
+        val pitchGyro = pitchCF + gy * dt
+
+        // 2) compute roll/pitch from accelerometer (gravity vector)
+        // Assumes standard phone axes: X right, Y up, Z out of screen
+        val rollAcc = kotlin.math.atan2(ay.toDouble(), az.toDouble()).toFloat()
+        val pitchAcc = kotlin.math.atan2(
+            (-ax).toDouble(),
+            kotlin.math.sqrt((ay * ay + az * az).toDouble())
+        ).toFloat()
+
+        // 3) complementary fusion: high-pass gyro, low-pass accel
+        val alpha = 0.98f  // tune between 0.90–0.99
+        rollCF  = alpha * rollGyro  + (1f - alpha) * rollAcc
+        pitchCF = alpha * pitchGyro + (1f - alpha) * pitchAcc
+
+        // 4) integrate yaw only from gyro (for now)
+        yawCF += gz * dt  // add this state var: var yawCF = 0f
+
+        // 5) apply reference pose if you want
+        val rollRel  = if (hasReference) rollCF  - roll0Ref  else rollCF
+        val pitchRel = if (hasReference) pitchCF - pitch0Ref else pitchCF
+        val yawRel   = if (hasReference) yawCF   - yaw0     else yawCF
+
+        // 6) map to outputs
+        currentYaw = yawRel
+        currentPitch = pitchRel
+        currentRoll = rollRel
+    }
     fun startListening(samplingRate: Int = SensorManager.SENSOR_DELAY_GAME) {
         currentSamplingRate = samplingRate
         accelerometer?.let { sensorManager.registerListener(this, it, currentSamplingRate) }
         gyroscopeUncalibrated?.let { sensorManager.registerListener(this, it, currentSamplingRate) }
-        if (gyroscopeUncalibrated == null) {
-            Log.e("AirMouse", "No TYPE_GYROSCOPE_UNCALIBRATED on this device")
-        } else {
-            Log.d("AirMouse", "Registered uncalibrated gyro: ${gyroscopeUncalibrated.name}")
-        }
+
         magnetometerUncalibrated?.let { sensorManager.registerListener(this, it, currentSamplingRate) }
         gravitySensor?.let { sensorManager.registerListener(this, it, currentSamplingRate) }
     }
@@ -84,7 +142,6 @@ class AirMouseSensorManager(
             Sensor.TYPE_ACCELEROMETER -> {
                 val raw = event.values.clone()
                 rawAccel = raw
-                Log.d("AirMouse0", "GYRO EVENT: [${rawGyro[0]}, ${rawGyro[1]}, ${rawGyro[2]}]")
                 // subtract offset and divide by scale
                 correctedAccel = floatArrayOf(
                     (rawAccel[0] - accelOffset[0]) / accelScale[0],
@@ -95,11 +152,10 @@ class AirMouseSensorManager(
 
 
             }
-            Sensor.TYPE_GYROSCOPE_UNCALIBRATED -> { // Change to TYPE_GYROSCOPE_UNCALIBRATED for wired connection, TYPE_GYROSCOPE for virtual
+            Sensor.TYPE_GYROSCOPE -> { // Change to TYPE_GYROSCOPE_UNCALIBRATED for wired connection, TYPE_GYROSCOPE for virtual
 
                 // ۳ خانه اول حاوی دیتای کاملاً خام سیستم هستند
                 rawGyro = floatArrayOf(event.values[0], event.values[1], event.values[2])
-                Log.d("AirMouse1", "GYRO EVENT: [${rawGyro[0]}, ${rawGyro[1]}, ${rawGyro[2]}]")
 
                 // subtract bias
                 correctedGyro = floatArrayOf(
@@ -115,12 +171,36 @@ class AirMouseSensorManager(
                 }
 
                 val now = System.currentTimeMillis()
-                val yRate = rawGyro[1] 
+                val yRate = rawGyro[1]
 
-                if (kotlin.math.abs(yRate) > clickThreshold && now - lastClickTime > clickCooldownMs) {
+                if (kotlin.math.abs(yRate) > clickThreshold && yRate < 0.0f && now - lastClickTime > clickCooldownMs) {
                     lastClickTime = now
                     onClick()
                 }
+                val ts = event.timestamp
+                val lastTs = lastTimestampNs
+                if (lastTs != null) {
+                    var dt = (ts - lastTs) / 1_000_000_000f
+                    dt = dt.coerceIn(0.001f, 0.05f)
+
+                    val ax = correctedAccel[0]
+                    val ay = correctedAccel[1]
+                    val az = correctedAccel[2]
+
+                    // if accel not valid yet, skip
+                    if (!(ax == 0f && ay == 0f && az == 0f)) {
+                        updateComplementary(
+                            dt,
+                            correctedGyro[0], correctedGyro[1], correctedGyro[2],
+                            ax, ay, az
+                        )
+                        Log.d(
+                            "Angles",
+                            "pitchCF=%.3f rollCF=%.3f".format(currentPitch, currentRoll)
+                        )
+                    }
+                }
+                lastTimestampNs = ts
 
             }
             Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED -> {
@@ -145,7 +225,14 @@ class AirMouseSensorManager(
         }
 
         // به‌روزرسانی زنده مقادیر در رابط کاربری
-        onSensorDataUpdated(correctedAccel, correctedGyro, correctedMag)
+        onSensorDataUpdated(
+            correctedAccel,
+            correctedGyro,
+            correctedMag,
+            currentYaw,
+            currentPitch,
+            currentRoll
+        )
 
         Trace.endSection()
     }
