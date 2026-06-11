@@ -152,7 +152,7 @@ class AirMouseSensorManager(
 
 
             }
-            Sensor.TYPE_GYROSCOPE -> { // Change to TYPE_GYROSCOPE_UNCALIBRATED for wired connection, TYPE_GYROSCOPE for virtual
+            Sensor.TYPE_GYROSCOPE_UNCALIBRATED -> { // Change to TYPE_GYROSCOPE_UNCALIBRATED for wired connection, TYPE_GYROSCOPE for virtual
 
                 // ۳ خانه اول حاوی دیتای کاملاً خام سیستم هستند
                 rawGyro = floatArrayOf(event.values[0], event.values[1], event.values[2])
