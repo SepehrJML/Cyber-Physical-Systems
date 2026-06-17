@@ -10,7 +10,7 @@ import java.net.SocketTimeoutException
 
 class UdpClient(
     private val serverIp: String,
-    private val serverPort: Int = 5000
+    private val serverPort: Int = 50000
 ) {
 
     private val socket = DatagramSocket()

@@ -48,6 +48,9 @@ fun AirMouseApp() {
     var yaw by remember { mutableStateOf(0f) }
     var pitch by remember { mutableStateOf(0f) }
     var roll by remember { mutableStateOf(0f) }
+    var yawPrev by remember { mutableStateOf(0f) }
+    var pitchPrev by remember { mutableStateOf(0f) }
+    var rollPrev by remember { mutableStateOf(0f) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -72,10 +75,6 @@ fun AirMouseApp() {
         )
     }
 
-    var x by remember { mutableStateOf(0f) }
-    var y by remember { mutableStateOf(0f) }
-
-
 
 
     LaunchedEffect(isRunning) {
@@ -85,6 +84,43 @@ fun AirMouseApp() {
             sensorManager.stopListening()
         }
 
+    }
+    // Add these states near yaw/pitch/roll
+    var xOffset by remember { mutableStateOf(0f) }
+    var yOffset by remember { mutableStateOf(0f) }
+
+    // Whenever yaw/roll change, update clamped offsets:
+    LaunchedEffect(yaw, roll, showCalibrationDialog) {
+        if (showCalibrationDialog) {
+            // Freeze in center during calibration
+            xOffset = 0f
+            yOffset = 0f
+        } else {
+            val gain = 50f
+            val maxOffset = 110f
+
+            xOffset = (-yaw * gain).coerceIn(-maxOffset, maxOffset)
+            yOffset = (-roll * gain).coerceIn(-maxOffset, maxOffset)
+        }
+    }
+    LaunchedEffect(yaw, roll, isRunning) {
+        if (!isRunning) return@LaunchedEffect
+        val gain = 70f
+        val client = udpClient
+        if (client != null) {
+            scope.launch {
+                try {
+                    client.sendMove(-(yaw-yawPrev)*gain, -(roll-rollPrev)*gain)
+                    yawPrev = yaw
+                    rollPrev = roll
+                } catch (e: Exception) {
+                    // temporary debug log
+                    android.util.Log.e("AirMouse", "sendMove failed", e)
+                }
+            }
+        } else {
+            android.util.Log.w("AirMouse", "udpClient is null, not sending")
+        }
     }
     /*
     LaunchedEffect(yawRateKState,pitchRateKState) {
@@ -129,7 +165,7 @@ fun AirMouseApp() {
         ) {
             Box(
                 modifier = Modifier
-                    .offset(x = (-yaw*50 ).dp, y = (-roll*50).dp)
+                    .offset(x = xOffset.dp, y = yOffset.dp)
                     .size(30.dp)
                     .background(if (clickStatus == "CLICKED!") Color.Red else Color.Green)
             )
@@ -149,7 +185,9 @@ fun AirMouseApp() {
         ) {
             Button(
                 onClick = {
-                    udpClient = UdpClient(ipAddress)
+                        udpClient = UdpClient(ipAddress)
+                    yawPrev = yaw
+                    rollPrev = roll
                     isRunning = !isRunning },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isRunning) Color.Red else Color.Green

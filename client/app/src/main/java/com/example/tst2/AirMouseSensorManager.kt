@@ -84,37 +84,85 @@ class AirMouseSensorManager(
     var currentYaw = 0f
     var currentPitch = 0f
     var currentRoll = 0f
-    private fun updateComplementary(
-        dt: Float,
-        gx: Float, gy: Float, gz: Float,  // rad/s (gx around X, gy around Y, gz around Z)
-        ax: Float, ay: Float, az: Float
-    ) {
-        // 1) integrate gyro for roll/pitch (simple integration)
-        val rollGyro  = rollCF  + gx * dt
-        val pitchGyro = pitchCF + gy * dt
-
-        // 2) compute roll/pitch from accelerometer (gravity vector)
-        // Assumes standard phone axes: X right, Y up, Z out of screen
+    private fun computeMagYaw(
+        ax: Float, ay: Float, az: Float,
+        mx: Float, my: Float, mz: Float
+    ): Float {
+        // 1) roll/pitch from accelerometer (same formulas you already use)
         val rollAcc = kotlin.math.atan2(ay.toDouble(), az.toDouble()).toFloat()
         val pitchAcc = kotlin.math.atan2(
             (-ax).toDouble(),
             kotlin.math.sqrt((ay * ay + az * az).toDouble())
         ).toFloat()
 
-        // 3) complementary fusion: high-pass gyro, low-pass accel
-        val alpha = 0.98f  // tune between 0.90–0.99
-        rollCF  = alpha * rollGyro  + (1f - alpha) * rollAcc
-        pitchCF = alpha * pitchGyro + (1f - alpha) * pitchAcc
+        // 2) tilt-compensate magnetometer
+        val cosRoll = kotlin.math.cos(rollAcc.toDouble()).toFloat()
+        val sinRoll = kotlin.math.sin(rollAcc.toDouble()).toFloat()
+        val cosPitch = kotlin.math.cos(pitchAcc.toDouble()).toFloat()
+        val sinPitch = kotlin.math.sin(pitchAcc.toDouble()).toFloat()
 
-        // 4) integrate yaw only from gyro (for now)
-        yawCF += gz * dt  // add this state var: var yawCF = 0f
+        // project mag vector into horizontal plane
+        val xh = mx * cosPitch + mz * sinPitch
+        val yh = mx * sinRoll * sinPitch + my * cosRoll - mz * sinRoll * cosPitch
 
-        // 5) apply reference pose if you want
-        val rollRel  = if (hasReference) rollCF  - roll0Ref  else rollCF
-        val pitchRel = if (hasReference) pitchCF - pitch0Ref else pitchCF
-        val yawRel   = if (hasReference) yawCF   - yaw0     else yawCF
+        // 3) heading from magnetic north (yawMag)
+        val yawMag = kotlin.math.atan2(-my.toDouble(), mx.toDouble()).toFloat()
+        return yawMag
+    }
+    private fun updateComplementary(
+        dt: Float,
+        gx: Float, gy: Float, gz: Float,  // rad/s
+        ax: Float, ay: Float, az: Float
+    ) {
+        // 1) integrate gyro for roll/pitch
+        val rollGyro  = rollCF  + gx * dt
+        val pitchGyro = pitchCF + gy * dt
 
-        // 6) map to outputs
+        // 2) accel roll/pitch
+        val rollAcc = kotlin.math.atan2(ay.toDouble(), az.toDouble()).toFloat()
+        val pitchAcc = kotlin.math.atan2(
+            (-ax).toDouble(),
+            kotlin.math.sqrt((ay * ay + az * az).toDouble())
+        ).toFloat()
+
+        val alphaRP = 0.98f
+        rollCF  = alphaRP * rollGyro  + (1f - alphaRP) * rollAcc
+        pitchCF = alphaRP * pitchGyro + (1f - alphaRP) * pitchAcc
+
+        // 3) yaw: gyro + magnetometer
+        // get latest calibrated mag
+        val mx = correctedMag[0]
+        val my = correctedMag[1]
+        val mz = correctedMag[2]
+
+        // gyro integration
+        val yawGyro = yawCF + gz * dt
+
+        // mag-based yaw (can be noisy; skip if mag is zero)
+        val yawMag = if (!(mx == 0f && my == 0f && mz == 0f)) {
+            //computeMagYaw(ax, ay, az, mx, my, mz)
+            yawCF
+        } else {
+            yawCF  // fall back to previous yaw
+        }
+
+        // complementary fusion for yaw (gyro+mag)
+        val alphaYaw = 0.98f  // mostly gyro, some mag to cancel drift
+        yawCF = alphaYaw * yawGyro + (1f - alphaYaw) * yawMag
+
+        // 4) apply reference pose
+        // if no reference yet, capture current as reference once
+        if (!hasReference) {
+            roll0Ref = rollCF
+            pitch0Ref = pitchCF
+            yaw0 = yawCF
+            hasReference = true
+        }
+
+        val rollRel  = rollCF  - roll0Ref
+        val pitchRel = pitchCF - pitch0Ref
+        val yawRel   = yawCF   - yaw0
+
         currentYaw = yawRel
         currentPitch = pitchRel
         currentRoll = rollRel
@@ -194,10 +242,7 @@ class AirMouseSensorManager(
                             correctedGyro[0], correctedGyro[1], correctedGyro[2],
                             ax, ay, az
                         )
-                        Log.d(
-                            "Angles",
-                            "pitchCF=%.3f rollCF=%.3f".format(currentPitch, currentRoll)
-                        )
+
                     }
                 }
                 lastTimestampNs = ts
@@ -218,6 +263,7 @@ class AirMouseSensorManager(
 
                 // if you want UI/fusion to use calibrated values:
                 // correctedMag for further use
+                //Log.d( "Mag","mx=%.3f my=%.3f mz=%.3f".format(correctedMag[0], correctedMag[1], correctedMag[2]))
             }
             Sensor.TYPE_GRAVITY -> {
                 rawGravity = event.values.clone()

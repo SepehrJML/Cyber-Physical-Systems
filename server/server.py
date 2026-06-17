@@ -103,7 +103,7 @@ pyautogui.FAILSAFE = False
 
 # سرور روی تمام اینترفیس‌های شبکه (از جمله وای‌فای) گوش می‌دهد
 HOST = '0.0.0.0'
-PORT = 5000
+PORT = 50000
 
 def start_server():
     # ۱. ساخت سوکت UDP با استفاده از SOCK_DGRAM
