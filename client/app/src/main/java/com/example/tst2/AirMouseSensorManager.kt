@@ -35,6 +35,7 @@ class AirMouseSensorManager(
     private var lastClickTime = 0L
     private val clickThreshold = 5f
     private val clickCooldownMs = 500L
+    private val clickFreezeDurationMs = 350L
 
     var rawAccel = FloatArray(3)
     var rawGyro = FloatArray(3)
@@ -108,7 +109,7 @@ class AirMouseSensorManager(
         val yh = mx * sinRoll * sinPitch + my * cosRoll - mz * sinRoll * cosPitch
 
         // 3) heading from magnetic north (yawMag)
-        val yawMag = kotlin.math.atan2(-my.toDouble(), mx.toDouble()).toFloat()
+        val yawMag = kotlin.math.atan2(-yh.toDouble(), xh.toDouble()).toFloat()
         return yawMag
     }
     private fun updateComplementary(
@@ -116,6 +117,11 @@ class AirMouseSensorManager(
         gx: Float, gy: Float, gz: Float,  // rad/s
         ax: Float, ay: Float, az: Float
     ) {
+        val now = System.currentTimeMillis()
+        if (now - lastClickTime < clickFreezeDurationMs) {
+            return
+        }
+
         // 1) integrate gyro for roll/pitch
         val rollGyro  = rollCF  + gx * dt
         val pitchGyro = pitchCF + gy * dt
