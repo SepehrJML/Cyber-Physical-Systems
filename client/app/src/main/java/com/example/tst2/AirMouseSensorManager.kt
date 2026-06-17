@@ -73,7 +73,9 @@ class AirMouseSensorManager(
     var pitch0Ref = 0f
     var roll0Ref = 0f
     var hasReference = false
-
+    var lastYawCF = 0f
+    var lastRollCF = 0f
+    var lastPitchCF = 0f
     fun setReferenceOrientation() {
         roll0Ref = rollCF
         pitch0Ref = pitchCF
@@ -139,17 +141,30 @@ class AirMouseSensorManager(
         val yawGyro = yawCF + gz * dt
 
         // mag-based yaw (can be noisy; skip if mag is zero)
-        val yawMag = if (!(mx == 0f && my == 0f && mz == 0f)) {
-            //computeMagYaw(ax, ay, az, mx, my, mz)
-            yawCF
+        val yawMagRaw = if (!(mx == 0f && my == 0f && mz == 0f)) {
+            computeMagYaw(ax, ay, az, mx, my, mz)
         } else {
             yawCF  // fall back to previous yaw
         }
-
+        // decide whether to trust mag this frame, based on motion
+        val dyaw  = yawCF  - lastYawCF
+        val droll = rollCF - lastRollCF
+        val dpitch = pitchCF - lastPitchCF
+        // if motion is mostly roll (|droll| >> |dyaw|), freeze mag correction
+        val rollDominant = kotlin.math.abs(droll) > 5f * kotlin.math.abs(dyaw)  // 5x threshold; tune
+        val pitchDominant = ( kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(dyaw) ) && (kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(droll))
+        val yawMag = if (rollDominant) {
+            // ignore magnetometer during roll: either use gyro-only or keep previous yaw
+            lastYawCF           // gyro-only correction this frame
+        } else {
+            yawMagRaw         // allow mag to correct yaw
+        }
         // complementary fusion for yaw (gyro+mag)
         val alphaYaw = 0.98f  // mostly gyro, some mag to cancel drift
         yawCF = alphaYaw * yawGyro + (1f - alphaYaw) * yawMag
-
+        lastYawCF = yawCF
+        lastRollCF = rollCF
+        lastPitchCF = pitchCF
         // 4) apply reference pose
         // if no reference yet, capture current as reference once
         if (!hasReference) {
@@ -162,10 +177,12 @@ class AirMouseSensorManager(
         val rollRel  = rollCF  - roll0Ref
         val pitchRel = pitchCF - pitch0Ref
         val yawRel   = yawCF   - yaw0
-
-        currentYaw = yawRel
+        if (!pitchDominant) {
+            currentYaw = yawRel
+            currentRoll = rollRel
+            }
         currentPitch = pitchRel
-        currentRoll = rollRel
+
     }
     fun startListening(samplingRate: Int = SensorManager.SENSOR_DELAY_GAME) {
         currentSamplingRate = samplingRate

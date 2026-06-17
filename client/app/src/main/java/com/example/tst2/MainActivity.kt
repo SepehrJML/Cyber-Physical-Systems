@@ -53,7 +53,7 @@ fun AirMouseApp() {
     var rollPrev by remember { mutableStateOf(0f) }
 
     val context = androidx.compose.ui.platform.LocalContext.current
-
+    var lastSendTime by remember { mutableStateOf(0L) }
     val sensorManager = remember {
         AirMouseSensorManager(
             context = context,
@@ -67,6 +67,10 @@ fun AirMouseApp() {
             },
             onClick = {
                 clickStatus = "CLICKED!"
+                scope.launch {
+
+                    udpClient?.sendClick()
+                }
                 scope.launch {
                     delay(200)
                     clickStatus = "NO CLICK"
@@ -105,7 +109,12 @@ fun AirMouseApp() {
     }
     LaunchedEffect(yaw, roll, isRunning) {
         if (!isRunning) return@LaunchedEffect
-        val gain = 70f
+        val now = System.currentTimeMillis()
+        val minIntervalMs = 16L  // ~60 Hz
+        if (now - lastSendTime < minIntervalMs) return@LaunchedEffect
+        lastSendTime = now
+
+        val gain = 800f
         val client = udpClient
         if (client != null) {
             scope.launch {
