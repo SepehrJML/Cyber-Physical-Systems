@@ -140,74 +140,77 @@ class AirMouseSensorManager(
             return
         }
 
+        android.os.Trace.beginSection("AirMouse_updateComplementary")
+        try {
+            // 1) integrate gyro for roll/pitch
+            val rollGyro  = rollCF  + gx * dt
+            val pitchGyro = pitchCF + gy * dt
 
-        // 1) integrate gyro for roll/pitch
-        val rollGyro  = rollCF  + gx * dt
-        val pitchGyro = pitchCF + gy * dt
+            // 2) accel roll/pitch
+            val rollAcc = kotlin.math.atan2(ay.toDouble(), az.toDouble()).toFloat()
+            val pitchAcc = kotlin.math.atan2(
+                (-ax).toDouble(),
+                kotlin.math.sqrt((ay * ay + az * az).toDouble())
+            ).toFloat()
 
-        // 2) accel roll/pitch
-        val rollAcc = kotlin.math.atan2(ay.toDouble(), az.toDouble()).toFloat()
-        val pitchAcc = kotlin.math.atan2(
-            (-ax).toDouble(),
-            kotlin.math.sqrt((ay * ay + az * az).toDouble())
-        ).toFloat()
+            val alphaRP = 0.98f
+            rollCF  = alphaRP * rollGyro  + (1f - alphaRP) * rollAcc
+            pitchCF = alphaRP * pitchGyro + (1f - alphaRP) * pitchAcc
 
-        val alphaRP = 0.98f
-        rollCF  = alphaRP * rollGyro  + (1f - alphaRP) * rollAcc
-        pitchCF = alphaRP * pitchGyro + (1f - alphaRP) * pitchAcc
+            // 3) yaw: gyro + magnetometer
+            // get latest calibrated mag
+            val mx = correctedMag[0]
+            val my = correctedMag[1]
+            val mz = correctedMag[2]
 
-        // 3) yaw: gyro + magnetometer
-        // get latest calibrated mag
-        val mx = correctedMag[0]
-        val my = correctedMag[1]
-        val mz = correctedMag[2]
+            // gyro integration
+            val yawGyro = yawCF + gz * dt
 
-        // gyro integration
-        val yawGyro = yawCF + gz * dt
-
-        // mag-based yaw (can be noisy; skip if mag is zero)
-        val yawMagRaw = if (!(mx == 0f && my == 0f && mz == 0f)) {
-            computeMagYaw(ax, ay, az, mx, my, mz)
-        } else {
-            yawCF  // fall back to previous yaw
-        }
-        // decide whether to trust mag this frame, based on motion
-        val dyaw  = yawCF  - lastYawCF
-        val droll = rollCF - lastRollCF
-        val dpitch = pitchCF - lastPitchCF
-        // if motion is mostly roll (|droll| >> |dyaw|), freeze mag correction
-        val rollDominant = kotlin.math.abs(droll) > 5f * kotlin.math.abs(dyaw)  // 5x threshold; tune
-        val pitchDominant = ( kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(dyaw) ) && (kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(droll))
-        val yawMag = if (rollDominant) {
-            // ignore magnetometer during roll: either use gyro-only or keep previous yaw
-            lastYawCF           // gyro-only correction this frame
-        } else {
-            yawMagRaw         // allow mag to correct yaw
-        }
-        // complementary fusion for yaw (gyro+mag)
-        val alphaYaw = 0.98f  // mostly gyro, some mag to cancel drift
-        yawCF = alphaYaw * yawGyro + (1f - alphaYaw) * yawMag
-        lastYawCF = yawCF
-        lastRollCF = rollCF
-        lastPitchCF = pitchCF
-        // 4) apply reference pose
-        // if no reference yet, capture current as reference once
-        if (!hasReference) {
-            roll0Ref = rollCF
-            pitch0Ref = pitchCF
-            yaw0 = yawCF
-            hasReference = true
-        }
-
-        val rollRel  = rollCF  - roll0Ref
-        val pitchRel = pitchCF - pitch0Ref
-        val yawRel   = yawCF   - yaw0
-        if (!pitchDominant) {
-            currentYaw = yawRel
-            currentRoll = rollRel
+            // mag-based yaw (can be noisy; skip if mag is zero)
+            val yawMagRaw = if (!(mx == 0f && my == 0f && mz == 0f)) {
+                computeMagYaw(ax, ay, az, mx, my, mz)
+            } else {
+                yawCF  // fall back to previous yaw
             }
-        currentPitch = pitchRel
+            // decide whether to trust mag this frame, based on motion
+            val dyaw  = yawCF  - lastYawCF
+            val droll = rollCF - lastRollCF
+            val dpitch = pitchCF - lastPitchCF
+            // if motion is mostly roll (|droll| >> |dyaw|), freeze mag correction
+            val rollDominant = kotlin.math.abs(droll) > 5f * kotlin.math.abs(dyaw)  // 5x threshold; tune
+            val pitchDominant = ( kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(dyaw) ) && (kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(droll))
+            val yawMag = if (rollDominant) {
+                // ignore magnetometer during roll: either use gyro-only or keep previous yaw
+                lastYawCF           // gyro-only correction this frame
+            } else {
+                yawMagRaw         // allow mag to correct yaw
+            }
+            // complementary fusion for yaw (gyro+mag)
+            val alphaYaw = 0.98f  // mostly gyro, some mag to cancel drift
+            yawCF = alphaYaw * yawGyro + (1f - alphaYaw) * yawMag
+            lastYawCF = yawCF
+            lastRollCF = rollCF
+            lastPitchCF = pitchCF
+            // 4) apply reference pose
+            // if no reference yet, capture current as reference once
+            if (!hasReference) {
+                roll0Ref = rollCF
+                pitch0Ref = pitchCF
+                yaw0 = yawCF
+                hasReference = true
+            }
 
+            val rollRel  = rollCF  - roll0Ref
+            val pitchRel = pitchCF - pitch0Ref
+            val yawRel   = yawCF   - yaw0
+            if (!pitchDominant) {
+                currentYaw = yawRel
+                currentRoll = rollRel
+            }
+            currentPitch = pitchRel
+        } finally {
+            android.os.Trace.endSection()
+        }
     }
     fun startListening(samplingRate: Int = SensorManager.SENSOR_DELAY_GAME) {
         currentSamplingRate = samplingRate
