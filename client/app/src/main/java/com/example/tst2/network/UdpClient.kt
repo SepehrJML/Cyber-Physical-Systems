@@ -23,50 +23,63 @@ class UdpClient(
         dx: Float,
         dy: Float
     ) {
-        val json = JSONObject()
+        android.os.Trace.beginSection("AirMouse_Udp_SendMove")
+        try {
+            val json = JSONObject()
 
-        json.put("type", "move")
-        json.put("dx", dx)
-        json.put("dy", dy)
-        json.put("timestamp", System.currentTimeMillis())
+            json.put("type", "move")
+            json.put("dx", dx)
+            json.put("dy", dy)
+            json.put("timestamp", System.currentTimeMillis())
 
-        sendRaw(json.toString())
+            sendRaw(json.toString())
+        } finally {
+            android.os.Trace.endSection()
+        }
     }
 
     suspend fun sendClick() {
+        android.os.Trace.beginSection("AirMouse_Udp_SendClick")
+        try {
+            val timestamp = System.currentTimeMillis()
 
-        val timestamp = System.currentTimeMillis()
+            val json = JSONObject()
 
-        val json = JSONObject()
+            json.put("type", "click")
+            json.put("button", "left")
+            json.put("timestamp", timestamp)
 
-        json.put("type", "click")
-        json.put("button", "left")
-        json.put("timestamp", timestamp)
-
-        sendReliable(
-            json.toString(),
-            "click",
-            timestamp
-        )
+            sendReliable(
+                json.toString(),
+                "click",
+                timestamp
+            )
+        } finally {
+            android.os.Trace.endSection()
+        }
     }
 
     suspend fun sendScroll(
         direction: Int
     ) {
+        android.os.Trace.beginSection("AirMouse_Udp_SendScroll")
+        try {
+            val timestamp = System.currentTimeMillis()
 
-        val timestamp = System.currentTimeMillis()
+            val json = JSONObject()
 
-        val json = JSONObject()
+            json.put("type", "scroll")
+            json.put("scroll_dir", direction)
+            json.put("timestamp", timestamp)
 
-        json.put("type", "scroll")
-        json.put("scroll_dir", direction)
-        json.put("timestamp", timestamp)
-
-        sendReliable(
-            json.toString(),
-            "scroll",
-            timestamp
-        )
+            sendReliable(
+                json.toString(),
+                "scroll",
+                timestamp
+            )
+        } finally {
+            android.os.Trace.endSection()
+        }
     }
 
     private suspend fun sendReliable(
@@ -129,18 +142,22 @@ class UdpClient(
     ) {
 
         withContext(Dispatchers.IO) {
+            android.os.Trace.beginSection("AirMouse_Udp_SendRaw")
+            try {
+                val data =
+                    (message + "\n").toByteArray()
 
-            val data =
-                (message + "\n").toByteArray()
+                val packet = DatagramPacket(
+                    data,
+                    data.size,
+                    InetAddress.getByName(serverIp),
+                    serverPort
+                )
 
-            val packet = DatagramPacket(
-                data,
-                data.size,
-                InetAddress.getByName(serverIp),
-                serverPort
-            )
-
-            socket.send(packet)
+                socket.send(packet)
+            } finally {
+                android.os.Trace.endSection()
+            }
         }
     }
 }
