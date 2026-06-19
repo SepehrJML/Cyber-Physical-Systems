@@ -31,7 +31,9 @@ class AirMouseSensorManager(
     private val magnetometerUncalibrated: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED)
     private val gravitySensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
 
+    var calibrationFlag = false
     //click detection variables
+
     private var lastClickTime = 0L
     private val clickThreshold = 5f
     private val clickCooldownMs = 500L
@@ -234,7 +236,7 @@ class AirMouseSensorManager(
                 if (isCollectingGyroSamples) {
                     gyroSamples.add(rawGyro.clone())
                 }
-
+                if (calibrationFlag) return
                 val now = System.currentTimeMillis()
                 val yRate = rawGyro[1]
 
