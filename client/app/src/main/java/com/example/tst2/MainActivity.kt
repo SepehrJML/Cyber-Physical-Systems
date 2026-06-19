@@ -61,9 +61,12 @@ fun AirMouseApp() {
                 accelData = accel
                 gyroData = gyro
                 magData = mag
-                yaw = yawIn
-                pitch = pitchIn
-                roll = rollIn
+                if (!showCalibrationDialog) {
+                    yaw = yawIn
+                    pitch = pitchIn
+                    roll = rollIn
+                }
+
             },
             onClick = {
                 clickStatus = "CLICKED!"
@@ -217,8 +220,11 @@ fun AirMouseApp() {
             Button(
                 onClick = {
                         udpClient = UdpClient(ipAddress)
+                    sensorManager.calibrationFlag = false
                     yawPrev = yaw
                     rollPrev = roll
+                    //xOffset = 0f
+                    //yOffset = 0f
                     isRunning = !isRunning },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isRunning) Color.Red else Color.Green
@@ -256,11 +262,13 @@ fun AirMouseApp() {
 
             Button(onClick = {
                 // سنسورها برای کالیبراسیون باید فعال باشند تا دیتای لحظه‌ای دریافت شود
+                showCalibrationDialog = true
+                sensorManager.calibrationFlag = true
                 if (!isRunning) {
                     sensorManager.startListening()
                 }
                 sensorManager.setReferenceOrientation()
-                showCalibrationDialog = true
+
             }) {
                 Text("CALIBRATE")
             }

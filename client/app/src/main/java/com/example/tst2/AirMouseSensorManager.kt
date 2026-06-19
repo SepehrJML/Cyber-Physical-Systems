@@ -32,7 +32,9 @@ class AirMouseSensorManager(
     private val magnetometerUncalibrated: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED)
     private val gravitySensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
 
-    // click detection variables
+    var calibrationFlag = false
+    //click detection variables
+
     private var lastClickTime = 0L
     private val clickThreshold = 5f
     private val clickCooldownMs = 500L
@@ -120,7 +122,7 @@ class AirMouseSensorManager(
         val yh = mx * sinRoll * sinPitch + my * cosRoll - mz * sinRoll * cosPitch
 
         // 3) heading from magnetic north (yawMag)
-        val yawMag = kotlin.math.atan2(-yh.toDouble(), xh.toDouble()).toFloat()
+        val yawMag = kotlin.math.atan2(-my.toDouble(), mx.toDouble()).toFloat()
         return yawMag
     }
     private fun updateComplementary(
@@ -133,8 +135,8 @@ class AirMouseSensorManager(
         if (now - lastClickTime < clickFreezeDurationMs) {
             return
         }
-        // freeze during and after scroll gesture until gyro settles
-        if (now - lastScrollTime < scrollFreezeDurationMs) {
+        val now = System.currentTimeMillis()
+        if (now - lastClickTime < clickFreezeDurationMs) {
             return
         }
 
@@ -256,7 +258,7 @@ class AirMouseSensorManager(
                 if (isCollectingGyroSamples) {
                     gyroSamples.add(rawGyro.clone())
                 }
-
+                if (calibrationFlag) return
                 val now = System.currentTimeMillis()
                 val yRate = rawGyro[1]
 
