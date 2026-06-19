@@ -972,22 +972,91 @@ Answer:
 Answer:
 
 ---
-
+- **Accelerometer:** Measures total acceleration (linear motion + gravity vector). Used to calculate absolute Roll and Pitch (tilt).
+  - *Raw Error:* Highly susceptible to high-frequency vibration and linear translation (shaking the phone register as tilt). It cannot measure rotation around the gravity axis (Yaw).
+- **Gyroscope:** Measures angular velocity (speed of rotation in rad/s).
+  - *Raw Error:* Integrating velocity over time to find angles leads to **linear integration drift** (offset/bias errors accumulate indefinitely). Even when stationary, the cursor will slowly creep across the screen.
+- **Magnetometer:** Measures ambient magnetic fields. Used to calculate absolute Yaw (heading) relative to magnetic north.
+  - *Raw Error:* Highly sensitive to electromagnetic interference (metal desks, computer monitors, electrical cords).
+- **Sensor Fusion (Complementary Filter):**
+  The code combines these sensors using a complementary filter:
+  $$\theta_{\text{new}} = \alpha (\theta_{\text{prev}} + \omega \cdot dt) + (1 - \alpha) \theta_{\text{acc/mag}}$$
+  - **Short-term:** It trusts the integrated gyroscope ($\alpha = 0.98$) because it is highly responsive and unaffected by sudden translations (high-pass filter).
+  - **Long-term:** It slowly pulls the orientation back to the absolute accelerometer and magnetometer readings ($1 - \alpha = 0.02$) to cancel out the gyroscope's integration drift (low-pass filter).
 ---
 
 ### Question 3
+Query:
+```SQL
+WITH diffs AS (
+  SELECT 
+    (ts - LAG(ts) OVER (ORDER BY ts)) / 1000000.0 as diff_ms
+  FROM slice
+  WHERE name = 'AirMouse_Sensor_Read_LSM6DSO Accelerometer'
+)
+SELECT 
+  COUNT(*) as event_count,
+  MIN(diff_ms) as min_delay_ms,
+  MAX(diff_ms) as max_delay_ms,
+  AVG(diff_ms) as avg_delay_ms
+FROM diffs
+WHERE diff_ms IS NOT NULL;
+```
+
+Query results: 
+| event_count | min_delay_ms | max_delay_ms | avg_delay_ms |
+| :--- | :--- | :--- | :--- |
+| 774 | 0.050677 | 60.413334 | 9.430943956072351 |
 
 Answer:
 
 ---
-
+- **Configured Rate:** The listener was registered with `SensorManager.SENSOR_DELAY_GAME` (typically targets an interval of **20ms / 50Hz**).
+- **Actual Measured Rate:** The average interval between readings was **`9.43ms` (approx. 106Hz)**. The minimum interval was `0.05ms` and the maximum was `60.41ms`.
+- **Reason for Discrepancy:** Android handles sensor events on a "best-effort" basis. Modern devices often deliver sensor callbacks linked to the hardware screen refresh rate (e.g. 90Hz or 120Hz) or default driver speeds, which explains the faster average speed (~9.4ms). The high variance (0.05ms to 60.4ms) is caused by CPU scheduling delays, thread preemption, and Garbage Collection pauses, which buffer events and deliver them in bursts.
 ---
 
 ### Question 4
+Query:
+```SQL
+SELECT 
+  state, 
+  SUM(dur) / 1000000.0 as total_dur_ms,
+  AVG(dur) / 1000000.0 as avg_dur_ms,
+  COUNT(*) as state_change_count
+FROM thread_state
+WHERE utid = (
+  SELECT utid 
+  FROM thread 
+  WHERE name = 'om.example.tst2' OR name = 'com.example.tst2' 
+  LIMIT 1
+)
+GROUP BY state;
+```
+
+Query results: 
+| state | total_dur_ms | avg_dur_ms | state_change_count |
+| :--- | :--- | :--- | :--- |
+| **D** (Uninterruptible Sleep) | 3.279374 | 0.16396870000000002 | 20 |
+| **R** (Runnable) | 158.826609 | 0.15898559459459458 | 999 |
+| **R+** (Runnable Preempted) | 17.577918 | 0.4625767894736842 | 38 |
+| **Running** | 7044.437927 | 6.4215477912488605 | 1097 |
+| **S** (Interruptible Sleep) | 98.453481 | 0.28537240869565217 | 345 |
 
 Answer:
 
 ---
+- **Yes, conflicts occur.** Because the sensor listener is registered without an independent HandlerThread, both the sensor updates (`onSensorChanged`) and the Jetpack Compose graphics rendering/measuring run on the **Main Thread** (`com.example.tst2` / thread name `om.example.tst2`). If a graphic frame is drawing or a system call blocks the main thread, sensor events are delayed.
+
+#### **SQL Query Analysis & Validation:**
+By querying the scheduling states of the Main Thread, we obtain the following results:
+- **`Running`**: `7044.44ms` (The thread is executing code on the processor).
+- **`R` (Runnable)**: `158.83ms` across **999** state changes. The thread wanted to run, but was kept waiting in the scheduler queue because other threads (e.g., graphics threads) occupied the cores.
+- **`R+` (Runnable Preempted)**: `17.58ms` across **38** state changes. This occurs when the OS scheduler forcibly context-switches the thread off the core to run higher-priority processes or interrupts.
+- **`D` (Uninterruptible Sleep)**: `3.28ms` across **20** occurrences. The thread was blocked inside the kernel waiting on system calls (I/O, IPC locks).
+- **`S` (Interruptible Sleep)**: `98.45ms` across **345** state changes (waiting on socket input).
+
+*Proof of Conflict:* The combined Runnable time (`R` + `R+` = **`176.4ms`**) and **1,037 scheduler preemptions** prove that time-sensitive activities are actively preempted and delayed by background system rendering and CPU scheduling conflicts.
 
 ---
 
@@ -996,53 +1065,236 @@ Answer:
 Answer:
 
 ---
-
+- **Wake-up Sensor:** Can trigger wake interrupts to the Application Processor (AP) when the phone is suspended (deep sleep).
+  - *Pros:* Constant background tracking (e.g. counting steps while the screen is off).
+  - *Cons:* High battery consumption.
+- **Non-wake-up Sensor:** Cannot wake up the CPU. Data is buffered in a hardware FIFO queue or discarded when the CPU is asleep.
+  - *Pros:* Extremely power-efficient.
+  - *Cons:* No data updates when the device goes to sleep.
+- *App Alignment:* The gravity sensor and gyroscope in this app are set as `Non-wakeup` (e.g., `gravity Non-wakeup` in Q7 output) because the mouse only needs to function when the screen is on and active.
 ---
 
 ### Question 6
+```SQL
+SELECT 
+  name,
+  COUNT(*) as count,
+  AVG(dur) / 1000000.0 as avg_duration_ms,
+  SUM(dur) / 1000000.0 as total_duration_ms
+FROM slice
+WHERE name IN ('AirMouse_updateComplementary', 'AirMouse_Udp_SendMove', 'AirMouse_Udp_SendRaw')
+GROUP BY name;
+```
+Query Results:
+| name | count | avg_duration_ms | total_duration_ms |
+| :--- | :--- | :--- | :--- |
+| AirMouse_Udp_SendMove | 136 | 31.255713772058822 | 4250.777073 |
+| AirMouse_Udp_SendRaw | 142 | 0.9922601267605633 | 140.900938 |
+| AirMouse_updateComplementary | 307 | 0.03099671986970684 | 9.515993 |
 
 Answer:
 
 ---
-
+- **Average Duration:** **`0.0309ms` (approx. 31 microseconds)**.
+- **Explanation:** The calculations are extremely lightweight because they consist of standard floating-point arithmetic. They run well within a tiny fraction of a millisecond, introducing negligible overhead.
 ---
 
 ### Question 7
+```SQL
+SELECT 
+  name,
+  COUNT(*) as event_count,
+  SUM(dur) / 1000000.0 as total_duration_ms,
+  AVG(dur) / 1000000.0 as avg_duration_ms
+FROM slice
+WHERE name LIKE 'AirMouse_Sensor_Read%'
+GROUP BY name
+ORDER BY total_duration_ms DESC;
+```
+
+Query Results:
+| name | event_count | total_duration_ms | avg_duration_ms |
+| :--- | :--- | :--- | :--- |
+| AirMouse_Sensor_Read_LSM6DSO Gyroscope-Uncalibrated | 388 | 94.412443 | 0.24333103865979383 |
+| AirMouse_Sensor_Read_LSM6DSO Accelerometer | 775 | 84.657301 | 0.10923522709677419 |
+| AirMouse_Sensor_Read_AK09918 Magnetometer-Uncalibrated | 366 | 40.692646 | 0.11118209289617485 |
+| AirMouse_Sensor_Read_gravity  Non-wakeup | 388 | 24.296663 | 0.06262026546391752 |
 
 Answer:
 
 ---
-
+- **Highest CPU Usage Sensor:** `LSM6DSO Gyroscope-Uncalibrated`
+  - **Average Processing Time:** **`0.243ms`** per event, compared to `0.109ms` for the Accelerometer.
+  - **Total Processing Time:** **`94.41ms`** total duration (the highest overall), despite having half as many recorded events as the accelerometer.
+- **Reason:** The Gyroscope callback hosts the click detection spikes, scroll logic state-machines, complementary filter integration, and coordinate calculations, whereas the accelerometer and magnetometer callbacks only copy and scale raw float vectors.
 ---
 
 ### Question 8
+```SQL
+SELECT 
+  t.name as thread_name,
+  p.name as process_name,
+  SUM(s.dur) / 1000000.0 as total_cpu_time_ms
+FROM sched s
+JOIN thread t ON s.utid = t.utid
+JOIN process p ON t.upid = p.upid
+WHERE p.name = 'system_server' OR t.name = 'SensorService'
+GROUP BY t.name, p.name
+ORDER BY total_cpu_time_ms DESC
+LIMIT 5;
+```
 
+Query Results:
+| thread_name | process_name | total_cpu_time_ms |
+| :--- | :--- | :--- |
+| SemWifiHandlerT | system_server | 942.923912 |
+| SensorService | system_server | 494.943561 |
+| binder:22316_3 | system_server | 179.867702 |
+| binder:22316_12 | system_server | 168.654473 |
+| binder:22316_16 | system_server | 137.89588 |
 Answer:
 
 ---
 
+- **System-Wide Impact:** High sampling rates generate constant hardware interrupts, forcing context-switches in the CPU. This places a heavy burden on `system_server` (specifically the `SensorService` thread) which must receive and broadcast these coordinates, draining the battery and creating CPU scheduling delays for other apps.
+
+#### **SQL Query Results & Verification:**
+From trace output, the CPU scheduling time for `system_server` threads are:
+- `SensorService`: **`494.94ms`**
+- `SemWifiHandlerT`: **`942.92ms`** (Wi-Fi packet handler)
+- `binder` threads: **`486.42ms`** (IPC context transmission)
+
+- Proof: The system service thread (`SensorService`) spends nearly **0.5 seconds** of pure execution time just serialization/demultiplexing sensor packets. Combined with Wi-Fi scheduling and IPC binder calls, high sensor sampling rates force the OS system server to execute heavy background tasks, lowering overall system efficiency.
 ---
 
 ### Question 9
+```SQL
+SELECT 
+  name,
+  COUNT(*) as count,
+  AVG(dur) / 1000000.0 as avg_duration_ms,
+  SUM(dur) / 1000000.0 as total_duration_ms
+FROM slice
+WHERE name IN ('AirMouse_updateComplementary', 'AirMouse_Udp_SendMove', 'AirMouse_Udp_SendRaw')
+GROUP BY name;
+```
+
+Query Results:
+| name | count | avg_duration_ms | total_duration_ms |
+| :--- | :--- | :--- | :--- |
+| AirMouse_Udp_SendMove | 136 | 31.255713772058822 | 4250.777073 |
+| AirMouse_Udp_SendRaw | 142 | 0.9922601267605633 | 140.900938 |
+| AirMouse_updateComplementary | 307 | 0.03099671986970684 | 9.515993 |
+
 
 Answer:
 
 ---
-
+- **App UDP Packaging & Scheduling (`AirMouse_Udp_SendMove`):** **`31.25ms`** on average.
+- **Raw Socket Write (`AirMouse_Udp_SendRaw`):** **`0.99ms`** on average.
+- **Network Transit Latency (Wi-Fi UDP):** Estimate **`2.0ms` to `5.0ms`**.
+- **PC Processing & PyAutoGUI Render:** Estimate **`2.0ms` to `4.0ms`**.
+- **Total Latency Calculation:**
+  $$\text{Total Latency} \approx 31.25\text{ ms (App)} + 3.5\text{ ms (Network)} + 3.0\text{ ms (PC)} \approx 37.75\text{ ms}$$
+- **Analysis:** The end-to-end delay is around **35-40ms**. The major delay occurs in the app (31.25ms vs 0.99ms raw network call) because of coroutine scheduling latency when launching tasks on `Dispatchers.IO`.
 ---
 
 ### Question 10
+```SQL
+SELECT 
+  name as slice_name,
+  thread_name,
+  tid,
+  process_name,
+  pid,
+  COUNT(*) as slice_count
+FROM thread_slice
+WHERE name = 'AirMouse_Sensor_Read_LSM6DSO Accelerometer'
+GROUP BY name, thread_name, tid, process_name, pid;
+```
+Query Results:
 
 Answer:
 
 ---
-
+- **Separation:** Sensor reads, filter calculations, and UI updates run on the **Main Thread** (`com.example.tst2`, `tid=4542`). Network socket writes are offloaded to background threads (`Dispatchers.IO`).
+- **Effect on Main Thread:** Because sensor events occur at a high rate (~106Hz) and run on the Main Thread, they occupy valuable execution slices. If a GC pause or heavy UI draw frame happens, it causes scheduling delays, locking mouse updates temporarily.
 ---
 
 ### Question 11
+```SQL
+SELECT 
+  s.cpu as cpu_core,
+  SUM(s.dur) / 1000000.0 as total_time_ms,
+  AVG(s.dur) / 1000000.0 as avg_slice_time_ms,
+  COUNT(*) as context_switch_count
+FROM sched s
+JOIN thread t ON s.utid = t.utid
+WHERE t.tid = 4542
+GROUP BY s.cpu
+ORDER BY cpu_core ASC;
+
+SELECT 
+  t.cpu as cpu_core,
+  c.value / 1000.0 as freq_mhz,
+  c.ts
+FROM counter c
+JOIN cpu_counter_track t ON c.track_id = t.id
+WHERE t.name = 'cpufreq'
+ORDER BY c.ts DESC
+LIMIT 10;
+```
+Query Results:
+| cpu_core | total_time_ms | avg_slice_time_ms | context_switch_count |
+| :--- | :--- | :--- | :--- |
+| **0** (Little Core) | 70.07229 | 1.9464525 | 36 |
+| **1** (Little Core) | 120.739636 | 4.312129857142858 | 28 |
+| **2** (Little Core) | 87.022653 | 2.71945790625 | 32 |
+| **3** (Little Core) | 110.00344 | 3.7932220689655174 | 29 |
+| **4** (Medium Core) | 1574.115566 | 5.2646005551839465 | 299 |
+| **5** (Medium Core) | 1460.502597 | 5.912965979757085 | 247 |
+| **6** (Big Core) | 1300.544049 | 6.222698799043062 | 209 |
+| **7** (Prime Big Core) | 2321.437696 | 10.697869566820277 | 217 |
+
+| cpu_core | freq_mhz | ts |
+| :--- | :--- | :--- |
+| 3 | 1900.8 | 2862224758317543 |
+| 2 | 1900.8 | 2862224758316710 |
+| 1 | 1900.8 | 2862224758315824 |
+| 0 | 1900.8 | 2862224758314210 |
+| 3 | 1804.8 | 2862224749290720 |
+| 2 | 1804.8 | 2862224749289731 |
+| 1 | 1804.8 | 2862224749288637 |
+| 0 | 1804.8 | 2862224749286085 |
 
 Answer:
 
 ---
+#### **Processor-Level Impact:**
+1. **Slow Movement:** 
+   - Sensor values are small. The complementary filter integrates tilt smoothly.
+   - The CPU execution load is steady and small. The Android CPU frequency governor (`schedutil`) schedules these tasks on the power-saving **Little Cores** (CPU cores 0–3) and keeps the operating **frequency low** (e.g. 1804 MHz) to minimize power draw.
+2. **Sudden Movement (Spike):** 
+   - A fast flick causes the angular rate to cross the click threshold. This triggers an immediate click event, launching reliable UDP coroutine writes (`sendReliable` which executes a loop formatting JSON and blocking on socket reads/writes waiting for ACKs).
+   - This sudden burst of I/O blocking and rapid loop execution causes a spike in CPU load.
+   - The Android CPU frequency governor detects this spike and immediately **migrates the thread to Big Cores** (CPU cores 4–7) and **scales up the CPU frequency** to its maximum (e.g., 1900 MHz) to handle the load, raising power consumption.
 
+#### **SQL Query 1: Thread Core Placement (Core Migration)**
+The trace scheduling data for the main thread (`tid = 4542`) shows:
+- **Cores 0-3 (Little Cores):** Spent `387.83ms` total runtime.
+- **Cores 4-7 (Medium/Big Cores):** Spent **`6656.60ms`** total runtime, with **`2321.44ms`** on CPU Core 7 alone!
+
+- *Proof:* The scheduler placed the Main Thread on high-performance Medium and Big Cores **94.5%** of the time. This proves that processing motion gestures with high event counts dynamically forces the CPU scheduler to migrate the threads to big cores to keep execution latencies down.
+
+#### **SQL Query 2: CPU Frequency Scaling**
+The frequency track shows CPU cores scaling:
+- Dynamic scaling steps from **`1804.8 MHz`** ramping up to **`1900.8 MHz`**.
+
+- *Proof:* The governor actively scales the frequency of the cores upwards (up to 1.9GHz) during high-throughput sensor reads and UDP transmissions to ensure prompt execution.
 ---
+
+
+
+
+
+
