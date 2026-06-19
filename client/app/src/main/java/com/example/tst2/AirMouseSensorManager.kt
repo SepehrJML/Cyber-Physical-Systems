@@ -37,6 +37,7 @@ class AirMouseSensorManager(
     private var lastClickTime = 0L
     private val clickThreshold = 5f
     private val clickCooldownMs = 500L
+    private val clickFreezeDurationMs = 350L
 
     var rawAccel = FloatArray(3)
     var rawGyro = FloatArray(3)
@@ -118,6 +119,15 @@ class AirMouseSensorManager(
         gx: Float, gy: Float, gz: Float,  // rad/s
         ax: Float, ay: Float, az: Float
     ) {
+        val now = System.currentTimeMillis()
+        if (now - lastClickTime < clickFreezeDurationMs) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now - lastClickTime < clickFreezeDurationMs) {
+            return
+        }
+
         // 1) integrate gyro for roll/pitch
         val rollGyro  = rollCF  + gx * dt
         val pitchGyro = pitchCF + gy * dt
