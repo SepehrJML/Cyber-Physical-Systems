@@ -57,7 +57,7 @@ fun AirMouseApp() {
     val sensorManager = remember {
         AirMouseSensorManager(
             context = context,
-            onSensorDataUpdated = { accel, gyro, mag, yawIn, pitchIn,rollIn ->
+            onSensorDataUpdated = { accel, gyro, mag, yawIn, pitchIn, rollIn ->
                 accelData = accel
                 gyroData = gyro
                 magData = mag
@@ -68,12 +68,21 @@ fun AirMouseApp() {
             onClick = {
                 clickStatus = "CLICKED!"
                 scope.launch {
-
                     udpClient?.sendClick()
                 }
                 scope.launch {
                     delay(200)
                     clickStatus = "NO CLICK"
+                }
+            },
+            onScroll = { direction ->
+                scrollStatus = if (direction > 0) "SCROLL UP" else "SCROLL DOWN"
+                scope.launch {
+                    udpClient?.sendScroll(direction)
+                }
+                scope.launch {
+                    delay(200)
+                    scrollStatus = "NO SCROLL"
                 }
             }
         )
@@ -176,7 +185,13 @@ fun AirMouseApp() {
                 modifier = Modifier
                     .offset(x = xOffset.dp, y = yOffset.dp)
                     .size(30.dp)
-                    .background(if (clickStatus == "CLICKED!") Color.Red else Color.Green)
+                    .background(
+                        when {
+                            clickStatus == "CLICKED!" -> Color.Red
+                            scrollStatus != "NO SCROLL" -> Color.Blue
+                            else -> Color.Green
+                        }
+                    )
             )
         }
 
@@ -184,8 +199,15 @@ fun AirMouseApp() {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            Text(text = clickStatus, color = if(clickStatus == "CLICKED!") Color.Red else Color.Black)
-            Text(text = scrollStatus)
+            Text(text = clickStatus, color = if (clickStatus == "CLICKED!") Color.Red else Color.Black)
+            Text(
+                text = scrollStatus,
+                color = when (scrollStatus) {
+                    "SCROLL UP" -> Color.Blue
+                    "SCROLL DOWN" -> Color.Blue
+                    else -> Color.Black
+                }
+            )
         }
 
         Row(

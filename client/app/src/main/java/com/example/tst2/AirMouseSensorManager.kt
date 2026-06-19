@@ -17,7 +17,8 @@ class AirMouseSensorManager(
         pitch: Float,
         currentRoll: Float
     ) -> Unit,
-    private val onClick: () -> Unit
+    private val onClick: () -> Unit,
+    private val onScroll: (Int) -> Unit
 ) : SensorEventListener {
 
     private val sensorManager = context.getSystemService(Context.SENSOR_SERVICE) as SensorManager
@@ -31,11 +32,21 @@ class AirMouseSensorManager(
     private val magnetometerUncalibrated: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD_UNCALIBRATED)
     private val gravitySensor: Sensor? = sensorManager.getDefaultSensor(Sensor.TYPE_GRAVITY)
 
-    //click detection variables
+    // click detection variables
     private var lastClickTime = 0L
     private val clickThreshold = 5f
     private val clickCooldownMs = 500L
     private val clickFreezeDurationMs = 350L
+
+    // scroll detection variables
+    private val scrollMinThreshold = 1.5f      // below this = noise/normal cursor movement, ignore
+    // scrollMaxThreshold reuses clickThreshold: above that = click, not scroll
+    private var lastScrollTime = 0L
+    private val scrollIntervalMs = 80L         // ~12 Hz, won't overwhelm pyautogui
+    private val scrollFreezeDurationMs = 350L  // how long to freeze filter after scroll gesture ends
+    // scroll intent latch: 0 = no active scroll, +1 = scrolling up, -1 = scrolling down
+    private var scrollLatchDirection = 0
+    private val scrollLatchResetCooldownMs = 400L  // must be below threshold for this long before latch resets
 
     var rawAccel = FloatArray(3)
     var rawGyro = FloatArray(3)
@@ -118,7 +129,12 @@ class AirMouseSensorManager(
         ax: Float, ay: Float, az: Float
     ) {
         val now = System.currentTimeMillis()
+        // freeze during click gesture
         if (now - lastClickTime < clickFreezeDurationMs) {
+            return
+        }
+        // freeze during and after scroll gesture until gyro settles
+        if (now - lastScrollTime < scrollFreezeDurationMs) {
             return
         }
 
@@ -244,10 +260,37 @@ class AirMouseSensorManager(
                 val now = System.currentTimeMillis()
                 val yRate = rawGyro[1]
 
+                // click: fast -Y spike above clickThreshold
                 if (kotlin.math.abs(yRate) > clickThreshold && yRate < 0.0f && now - lastClickTime > clickCooldownMs) {
                     lastClickTime = now
+                    scrollLatchDirection = 0  // reset scroll latch on click
                     onClick()
                 }
+                // scroll: slow -Y or +Y movement between scrollMinThreshold and clickThreshold
+                // blocked during click freeze so a click never also triggers a scroll
+                else if (kotlin.math.abs(yRate) in scrollMinThreshold..clickThreshold
+                    && now - lastScrollTime > scrollIntervalMs
+                    && now - lastClickTime > clickFreezeDurationMs) {
+
+                    val direction = if (yRate < 0f) -1 else 1
+
+                    // latch: only fire if direction matches the established latch (or no latch yet)
+                    // prevents the return-to-neutral motion from scrolling in the opposite direction
+                    if (scrollLatchDirection == 0) {
+                        scrollLatchDirection = direction  // establish latch on first scroll event
+                    }
+
+                    if (direction == scrollLatchDirection) {
+                        lastScrollTime = now
+                        onScroll(direction)
+                    }
+                } else if (kotlin.math.abs(yRate) < scrollMinThreshold
+                    && now - lastScrollTime > scrollLatchResetCooldownMs) {
+                    // Y rate is back to neutral AND enough time has passed since last scroll event
+                    // — the full return motion has completed, safe to release the latch
+                    scrollLatchDirection = 0
+                }
+
                 val ts = event.timestamp
                 val lastTs = lastTimestampNs
                 if (lastTs != null) {
