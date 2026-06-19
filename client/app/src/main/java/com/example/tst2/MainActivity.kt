@@ -225,7 +225,7 @@ fun AirMouseApp() {
         ) {
             Button(
                 onClick = {
-                        udpClient = UdpClient(ipAddress)
+                    udpClient = UdpClient(ipAddress)
                     sensorManager.calibrationFlag = false
                     yawPrev = yaw
                     rollPrev = roll

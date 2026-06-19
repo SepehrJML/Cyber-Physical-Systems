@@ -130,6 +130,11 @@ class AirMouseSensorManager(
         gx: Float, gy: Float, gz: Float,  // rad/s
         ax: Float, ay: Float, az: Float
     ) {
+<<<<<<< HEAD
+
+        val now = System.currentTimeMillis()
+        if (now - lastClickTime < clickFreezeDurationMs) {
+=======
         val now = System.currentTimeMillis()
         // freeze during click gesture
         if (now - lastClickTime < clickFreezeDurationMs) {
@@ -167,6 +172,50 @@ class AirMouseSensorManager(
             // gyro integration
             val yawGyro = yawCF + gz * dt
 
+<<<<<<< HEAD
+        // mag-based yaw (can be noisy; skip if mag is zero)
+        val yawMagRaw = if (!(mx == 0f && my == 0f && mz == 0f)) {
+            computeMagYaw(ax, ay, az, mx, my, mz)
+        } else {
+            yawCF  // fall back to previous yaw
+        }
+        // decide whether to trust mag this frame, based on motion
+        val dyaw  = yawCF  - lastYawCF
+        val droll = rollCF - lastRollCF
+        val dpitch = pitchCF - lastPitchCF
+        // if motion is mostly roll (|droll| >> |dyaw|), freeze mag correction
+        val rollDominant = kotlin.math.abs(droll) > 5f * kotlin.math.abs(dyaw)  // 5x threshold; tune
+        val pitchDominant = ( kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(dyaw) ) && (kotlin.math.abs(dpitch) > 5f * kotlin.math.abs(droll))
+        val yawMag = if (rollDominant) {
+            // ignore magnetometer during roll: either use gyro-only or keep previous yaw
+            lastYawCF           // gyro-only correction this frame
+        } else {
+            yawMagRaw         // allow mag to correct yaw
+        }
+        // complementary fusion for yaw (gyro+mag)
+        val alphaYaw = 0.98f  // mostly gyro, some mag to cancel drift
+        yawCF = alphaYaw * yawGyro + (1f - alphaYaw) * yawMag
+        lastYawCF = yawCF
+        lastRollCF = rollCF
+        lastPitchCF = pitchCF
+        // 4) apply reference pose
+        // if no reference yet, capture current as reference once
+        if (!hasReference) {
+            roll0Ref = rollCF
+            pitch0Ref = pitchCF
+            yaw0 = yawCF
+            hasReference = true
+        }
+
+        val rollRel  = rollCF  - roll0Ref
+        val pitchRel = pitchCF - pitch0Ref
+        val yawRel   = yawCF   - yaw0
+        if (!pitchDominant) {
+            currentYaw = yawRel
+            currentRoll = rollRel
+        }
+        currentPitch = pitchRel
+=======
             // mag-based yaw (can be noisy; skip if mag is zero)
             val yawMagRaw = if (!(mx == 0f && my == 0f && mz == 0f)) {
                 computeMagYaw(ax, ay, az, mx, my, mz)
@@ -200,6 +249,7 @@ class AirMouseSensorManager(
                 yaw0 = yawCF
                 hasReference = true
             }
+>>>>>>> 161c6aec7b49a58f7ac47f5b8ceb08659901ffe5
 
             val rollRel  = rollCF  - roll0Ref
             val pitchRel = pitchCF - pitch0Ref
