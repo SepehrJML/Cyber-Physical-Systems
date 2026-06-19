@@ -135,10 +135,11 @@ class AirMouseSensorManager(
         if (now - lastClickTime < clickFreezeDurationMs) {
             return
         }
-        val now = System.currentTimeMillis()
-        if (now - lastClickTime < clickFreezeDurationMs) {
+
+        if (now - lastScrollTime < scrollFreezeDurationMs) {
             return
         }
+
 
         // 1) integrate gyro for roll/pitch
         val rollGyro  = rollCF  + gx * dt
