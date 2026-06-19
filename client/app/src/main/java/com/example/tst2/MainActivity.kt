@@ -101,14 +101,14 @@ fun AirMouseApp() {
         }
 
     }
-    // Add these states near yaw/pitch/roll
+    
     var xOffset by remember { mutableStateOf(0f) }
     var yOffset by remember { mutableStateOf(0f) }
 
-    // Whenever yaw/roll change, update clamped offsets:
+    
     LaunchedEffect(yaw, roll, showCalibrationDialog) {
         if (showCalibrationDialog) {
-            // Freeze in center during calibration
+            
             xOffset = 0f
             yOffset = 0f
         } else {
@@ -122,7 +122,7 @@ fun AirMouseApp() {
     LaunchedEffect(yaw, roll, isRunning) {
         if (!isRunning) return@LaunchedEffect
         val now = System.currentTimeMillis()
-        val minIntervalMs = 10L  // ~60 Hz
+        val minIntervalMs = 10L  
         if (now - lastSendTime < minIntervalMs) return@LaunchedEffect
         lastSendTime = now
 
@@ -140,7 +140,7 @@ fun AirMouseApp() {
                     try {
                         client.sendMove(dx, dy)
                     } catch (e: Exception) {
-                        // temporary debug log
+                        
                         android.util.Log.e("AirMouse", "sendMove failed", e)
                     }
                 }
@@ -149,16 +149,7 @@ fun AirMouseApp() {
             android.util.Log.w("AirMouse", "udpClient is null, not sending")
         }
     }
-    /*
-    LaunchedEffect(yawRateKState,pitchRateKState) {
-        val gain = 1f
-        x += -yawRateKState * gain
-        y += -pitchRateKState * gain
-
-        x = x.coerceIn(-110f, 110f)
-        y = y.coerceIn(-110f, 110f)
-    }
-    */
+    
 
 
     Column(
@@ -170,7 +161,7 @@ fun AirMouseApp() {
     ) {
         Text(text = "AIR MOUSE", fontSize = 24.sp, fontWeight = FontWeight.Bold)
 
-        // فیلد ورود IP لپ‌تاپ با بک‌گراند اختصاصی سفید
+        
         OutlinedTextField(
             value = ipAddress,
             onValueChange = { ipAddress = it },
@@ -183,7 +174,7 @@ fun AirMouseApp() {
             )
         )
 
-        // محوطه نمایش بازخورد بصری حرکت
+        
         Box(
             modifier = Modifier
                 .size(250.dp)
@@ -229,8 +220,8 @@ fun AirMouseApp() {
                     sensorManager.calibrationFlag = false
                     yawPrev = yaw
                     rollPrev = roll
-                    //xOffset = 0f
-                    //yOffset = 0f
+                    
+                    
                     isRunning = !isRunning },
                 colors = ButtonDefaults.buttonColors(
                     containerColor = if (isRunning) Color.Red else Color.Green
@@ -238,36 +229,10 @@ fun AirMouseApp() {
             ) {
                 Text(if (isRunning) "STOP MOUSE" else "START MOUSE")
             }
-            /*
-            Button( // test button for move
-                onClick = {
-
-                    scope.launch {
-
-                        udpClient?.sendMove(
-                            50f,
-                            0f
-                        )
-                    }
-                }
-            ) {
-                Text("TEST MOVE")
-            }
-
-            Button( // test button for click
-                onClick = {
-
-                    scope.launch {
-
-                        udpClient?.sendClick()
-                    }
-                }
-            ) {
-                Text("TEST CLICK")
-            } */
+            
 
             Button(onClick = {
-                // سنسورها برای کالیبراسیون باید فعال باشند تا دیتای لحظه‌ای دریافت شود
+                
                 showCalibrationDialog = true
                 sensorManager.calibrationFlag = true
                 if (!isRunning) {
@@ -308,7 +273,7 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
     var gyroStatusText by remember { mutableStateOf("Ready to collect.") }
     var isGyroCalibrating by remember { mutableStateOf(false) }
 
-    // لیست استیت در Compose برای نمایش زنده وضعیت مقادیر ذخیره شده شتاب‌سنج در UI
+    
     val registeredAccelPositions = remember { mutableStateListOf(*Array(6) { "Not recorded" }) }
 
     Dialog(onDismissRequest = onDismiss) {
@@ -318,18 +283,18 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp)
-                .heightIn(max = 550.dp) // محدود کردن ارتفاع جهت ریسپانسیو بودن در تمام نمایشگرها
+                .heightIn(max = 550.dp) 
         ) {
             Column(
                 modifier = Modifier
                     .padding(16.dp)
-                    .verticalScroll(rememberScrollState()), // قابلیت اسکرول برای جلوگیری از به هم ریختن قالب
+                    .verticalScroll(rememberScrollState()), 
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text("Calibration Data Gathering", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // --- ۱. پیاده‌سازی وظیفه شما در بخش ژیروسکوپ (جمع‌آوری ۳ ثانیه‌ای) ---
+                
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -343,10 +308,10 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
                             onClick = {
                                 scope.launch {
                                     isGyroCalibrating = true
-                                    sensorManager.gyroSamples.clear() // پاک کردن دیتای قبلی
+                                    sensorManager.gyroSamples.clear() 
                                     sensorManager.isCollectingGyroSamples = true
 
-                                    // پیاده‌سازی زمان‌بندی دقیق ۳ ثانیه‌ای با نمایش معکوس به کاربر
+                                    
                                     for (i in 3 downTo 1) {
                                         gyroStatusText = "Collecting raw data... $i s left."
                                         delay(1000)
@@ -370,7 +335,7 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // --- ۲. پیاده‌سازی وظیفه شما در بخش شتاب‌سنج (آرایه ۶ تایی وضعیت فیزیکی) ---
+                
                 Card(
                     modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
@@ -395,7 +360,7 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
                                 Text(label, fontSize = 12.sp, modifier = Modifier.weight(1f))
                                 Button(
                                     onClick = {
-                                        sensorManager.recordAccelPosition(index) // ذخیره در خانه مربوطه از آرایه
+                                        sensorManager.recordAccelPosition(index) 
                                         val recorded = sensorManager.accelPositions[index]
                                         registeredAccelPositions[index] = "[%.2f, %.2f, %.2f]".format(recorded[0], recorded[1], recorded[2])
                                     },
@@ -414,7 +379,7 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
                     }
                     Button(
                         onClick = {
-                            // maybe check that all 6 positions are recorded (not "Not recorded")
+                            
                             sensorManager.computeAccelCalibration()
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -422,11 +387,11 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
                         Text("Compute Accel Calibration")
                     }
                 }
-                // inside Column in CalibrationScreen, after the accel card
+                
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // 3. Magnetometer calibration (5s)
+                
                 var magStatusText by remember { mutableStateOf("Ready. Rotate phone in all directions.") }
                 var isMagCalibrating by remember { mutableStateOf(false) }
 
@@ -451,7 +416,7 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
                                 scope.launch {
                                     isMagCalibrating = true
                                     sensorManager.isCollectingMagSamples = true
-                                    // reset min/max so this run is clean
+                                    
                                     sensorManager.magMin = floatArrayOf(
                                         Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE
                                     )
@@ -464,7 +429,7 @@ fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Uni
                                         delay(1000)
                                     }
 
-                                    // compute offset/scale from the collected min/max
+                                    
                                     sensorManager.computeMagCalibration()
                                     isMagCalibrating = false
                                     sensorManager.isCollectingMagSamples = false

@@ -4,8 +4,8 @@
 ### Team Members
 | Name | Student ID | Contribution |
 |---|---|---|
-| Sepehr Bazargan | 810102303 | ??? |
-| Sepehr Jamali | 810101400 | ??? |
+| Sepehr Bazargan | 810102303 | Perfetto & Sensor Fusion |
+| Sepehr Jamali | 810101400 | Sensor Fusion |
 | Mohamad Mahdi Sharifi | 810101449 | UI |
 | Mohamad Mahdi Samadi | 810101465 | Server |
 
@@ -17,7 +17,7 @@ The purpose of this project was to develop an air mouse system that allows a sma
 
 The system is divided into two components. The first component is an Android application written in Kotlin, responsible for acquiring sensor data, calibrating the sensors, detecting gestures, and sending commands through the network. The second component is a Python server running on a computer. The server receives commands from the phone and executes them using the PyAutoGUI library.
 
-The project uses raw sensor measurements and implements calibration and sensor fusion techniques to improve accuracy. Communication between the phone and the server is based on UDP in order to achieve low latency. Since UDP does not guarantee packet delivery, an acknowledgment mechanism is implemented for click and scroll events.
+
 
 ---
 
@@ -964,6 +964,16 @@ Overall, the project demonstrates how smartphone sensors and wireless communicat
 Answer:
 
 ---
+![alt text](image.png)
+
+
+#### **OS-Level Flow:**
+1. **Hardware Interrupt:** When the physical sensor chip (`LSM6DSO`) has data ready, it toggles a hardware interrupt line connected to the Application Processor (AP).
+2. **Kernel Driver Execution:** The Linux kernel registers the GPIO interrupt, pausing current CPU tasks to run the sensor's kernel driver. The driver fetches raw data from the sensor chip over I2C or SPI.
+3. **Sensor HAL & System Server:** The Android Sensor HAL reads the raw driver values and passes them to the `sensorservice` daemon running inside `system_server`.
+4. **IPC BitTube Transfer:** The `sensorservice` writes the sensor event packet to a specialized IPC structure called `BitTube` (a fast Unix domain socket designed for high-frequency sensor dispatch).
+5. **App Thread Wakeup:** The application's Main Thread (which was blocked/sleeping waiting on the BitTube socket) is marked `Runnable` by the CPU scheduler.
+6. **Kotlin Callback:** The scheduler puts the main thread into the `Running` state on a CPU core. The app event loop reads the packet, generates a `SensorEvent`, and executes `onSensorChanged()`.
 
 ---
 
@@ -980,7 +990,7 @@ Answer:
   - *Raw Error:* Highly sensitive to electromagnetic interference (metal desks, computer monitors, electrical cords).
 - **Sensor Fusion (Complementary Filter):**
   The code combines these sensors using a complementary filter:
-  $$\theta_{\text{new}} = \alpha (\theta_{\text{prev}} + \omega \cdot dt) + (1 - \alpha) \theta_{\text{acc/mag}}$$
+  $$\theta_{\text{new}} = \alpha (\omega_{\text{gyro}} ) + (1 - \alpha) \theta_{\text{acc/mag}}$$
   - **Short-term:** It trusts the integrated gyroscope ($\alpha = 0.98$) because it is highly responsive and unaffected by sudden translations (high-pass filter).
   - **Long-term:** It slowly pulls the orientation back to the absolute accelerometer and magnetometer readings ($1 - \alpha = 0.02$) to cancel out the gyroscope's integration drift (low-pass filter).
 ---
@@ -1292,7 +1302,6 @@ The frequency track shows CPU cores scaling:
 
 - *Proof:* The governor actively scales the frequency of the cores upwards (up to 1.9GHz) during high-throughput sensor reads and UDP transmissions to ensure prompt execution.
 ---
-
 
 
 
