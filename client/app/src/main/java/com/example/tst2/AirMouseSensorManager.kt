@@ -119,10 +119,7 @@ class AirMouseSensorManager(
         gx: Float, gy: Float, gz: Float,  // rad/s
         ax: Float, ay: Float, az: Float
     ) {
-        val now = System.currentTimeMillis()
-        if (now - lastClickTime < clickFreezeDurationMs) {
-            return
-        }
+
         val now = System.currentTimeMillis()
         if (now - lastClickTime < clickFreezeDurationMs) {
             return
