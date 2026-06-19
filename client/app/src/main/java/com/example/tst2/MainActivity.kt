@@ -131,7 +131,7 @@ fun AirMouseApp() {
         if (client != null) {
             val dx = -(yaw - yawPrev) * gain
             val dy = -(roll - rollPrev) * gain
-            
+
             yawPrev = yaw
             rollPrev = roll
 
