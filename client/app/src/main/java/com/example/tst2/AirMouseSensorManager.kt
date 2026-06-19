@@ -136,7 +136,8 @@ class AirMouseSensorManager(
             return
         }
 
-        if (now - lastScrollTime < scrollFreezeDurationMs) {
+        // freeze during scroll gesture (including return-to-neutral motion)
+        if (isScrolling()) {
             return
         }
 
@@ -211,6 +212,10 @@ class AirMouseSensorManager(
         } finally {
             android.os.Trace.endSection()
         }
+    }
+    fun isScrolling(): Boolean {
+        val now = System.currentTimeMillis()
+        return scrollLatchDirection != 0 || (now - lastScrollTime < scrollFreezeDurationMs)
     }
     fun startListening(samplingRate: Int = SensorManager.SENSOR_DELAY_GAME) {
         currentSamplingRate = samplingRate
@@ -288,6 +293,7 @@ class AirMouseSensorManager(
 
                     if (direction == scrollLatchDirection) {
                         lastScrollTime = now
+                        //lastClickTime = now
                         onScroll(direction)
                     }
                 } else if (kotlin.math.abs(yRate) < scrollMinThreshold

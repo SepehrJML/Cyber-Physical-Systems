@@ -132,8 +132,9 @@ def start_server():
                 try:
                     # دی‌سریالایز کردن دیتای جی‌سون دریافتی
                     packet = json.loads(line)
-                    print(f"New packet from {client_address}: {line}")
                     packet_type = packet.get("type")
+                    if packet_type != "move":
+                        print(f"New packet from {client_address}: {line}")
                     
                     # الف) پردازش دیتای حرکت موس هوایی (با فرکانس بالا ارسال می‌شود)
                     if packet_type == "move":

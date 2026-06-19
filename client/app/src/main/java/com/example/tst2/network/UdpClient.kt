@@ -14,6 +14,18 @@ class UdpClient(
 ) {
 
     private val socket = DatagramSocket()
+    private var resolvedAddress: InetAddress? = null
+
+    private suspend fun getAddress(): InetAddress {
+        var addr = resolvedAddress
+        if (addr == null) {
+            addr = withContext(Dispatchers.IO) {
+                InetAddress.getByName(serverIp)
+            }
+            resolvedAddress = addr
+        }
+        return addr!!
+    }
 
     init {
         socket.soTimeout = 200
@@ -140,7 +152,7 @@ class UdpClient(
     private suspend fun sendRaw(
         message: String
     ) {
-
+        val address = getAddress()
         withContext(Dispatchers.IO) {
             android.os.Trace.beginSection("AirMouse_Udp_SendRaw")
             try {
@@ -150,7 +162,7 @@ class UdpClient(
                 val packet = DatagramPacket(
                     data,
                     data.size,
-                    InetAddress.getByName(serverIp),
+                    address,
                     serverPort
                 )
 

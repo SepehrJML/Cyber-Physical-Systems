@@ -122,21 +122,27 @@ fun AirMouseApp() {
     LaunchedEffect(yaw, roll, isRunning) {
         if (!isRunning) return@LaunchedEffect
         val now = System.currentTimeMillis()
-        val minIntervalMs = 16L  // ~60 Hz
+        val minIntervalMs = 10L  // ~60 Hz
         if (now - lastSendTime < minIntervalMs) return@LaunchedEffect
         lastSendTime = now
 
         val gain = 800f
         val client = udpClient
         if (client != null) {
-            scope.launch {
-                try {
-                    client.sendMove(-(yaw-yawPrev)*gain, -(roll-rollPrev)*gain)
-                    yawPrev = yaw
-                    rollPrev = roll
-                } catch (e: Exception) {
-                    // temporary debug log
-                    android.util.Log.e("AirMouse", "sendMove failed", e)
+            val dx = -(yaw - yawPrev) * gain
+            val dy = -(roll - rollPrev) * gain
+            
+            yawPrev = yaw
+            rollPrev = roll
+
+            if (dx != 0f || dy != 0f) {
+                scope.launch {
+                    try {
+                        client.sendMove(dx, dy)
+                    } catch (e: Exception) {
+                        // temporary debug log
+                        android.util.Log.e("AirMouse", "sendMove failed", e)
+                    }
                 }
             }
         } else {
