@@ -1,0 +1,460 @@
+package com.example.tst2
+
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import com.example.tst2.network.UdpClient
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            AirMouseApp()
+        }
+    }
+}
+
+@Composable
+fun AirMouseApp() {
+    var ipAddress by remember { mutableStateOf("") }
+    val scope = rememberCoroutineScope()
+    var udpClient by remember {
+        mutableStateOf<UdpClient?>(null)
+    }
+    var isRunning by remember { mutableStateOf(false) }
+    var showCalibrationDialog by remember { mutableStateOf(false) }
+
+    var accelData by remember { mutableStateOf(floatArrayOf(0f, 0f, 0f)) }
+    var gyroData by remember { mutableStateOf(floatArrayOf(0f, 0f, 0f)) }
+    var magData by remember { mutableStateOf(floatArrayOf(0f, 0f, 0f)) }
+
+    var clickStatus by remember { mutableStateOf("NO CLICK") }
+    var scrollStatus by remember { mutableStateOf("NO SCROLL") }
+    var yaw by remember { mutableStateOf(0f) }
+    var pitch by remember { mutableStateOf(0f) }
+    var roll by remember { mutableStateOf(0f) }
+    var yawPrev by remember { mutableStateOf(0f) }
+    var pitchPrev by remember { mutableStateOf(0f) }
+    var rollPrev by remember { mutableStateOf(0f) }
+
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var lastSendTime by remember { mutableStateOf(0L) }
+    val sensorManager = remember {
+        AirMouseSensorManager(
+            context = context,
+            onSensorDataUpdated = { accel, gyro, mag, yawIn, pitchIn, rollIn ->
+                accelData = accel
+                gyroData = gyro
+                magData = mag
+                if (!showCalibrationDialog) {
+                    yaw = yawIn
+                    pitch = pitchIn
+                    roll = rollIn
+                }
+
+            },
+            onClick = {
+                clickStatus = "CLICKED!"
+                scope.launch {
+                    udpClient?.sendClick()
+                }
+                scope.launch {
+                    delay(200)
+                    clickStatus = "NO CLICK"
+                }
+            },
+            onScroll = { direction ->
+                scrollStatus = if (direction > 0) "SCROLL UP" else "SCROLL DOWN"
+                scope.launch {
+                    udpClient?.sendScroll(direction)
+                }
+                scope.launch {
+                    delay(200)
+                    scrollStatus = "NO SCROLL"
+                }
+            }
+        )
+    }
+
+
+
+    LaunchedEffect(isRunning) {
+        if (isRunning) {
+            sensorManager.startListening()
+        } else {
+            sensorManager.stopListening()
+        }
+
+    }
+    
+    var xOffset by remember { mutableStateOf(0f) }
+    var yOffset by remember { mutableStateOf(0f) }
+
+    
+    LaunchedEffect(yaw, roll, showCalibrationDialog) {
+        if (showCalibrationDialog) {
+            
+            xOffset = 0f
+            yOffset = 0f
+        } else {
+            val gain = 50f
+            val maxOffset = 110f
+
+            xOffset = (-yaw * gain).coerceIn(-maxOffset, maxOffset)
+            yOffset = (-roll * gain).coerceIn(-maxOffset, maxOffset)
+        }
+    }
+    LaunchedEffect(yaw, roll, isRunning) {
+        if (!isRunning) return@LaunchedEffect
+        val now = System.currentTimeMillis()
+        val minIntervalMs = 10L  
+        if (now - lastSendTime < minIntervalMs) return@LaunchedEffect
+        lastSendTime = now
+
+        val gain = 800f
+        val client = udpClient
+        if (client != null) {
+            val dx = -(yaw - yawPrev) * gain
+            val dy = -(roll - rollPrev) * gain
+
+            yawPrev = yaw
+            rollPrev = roll
+
+            if (dx != 0f || dy != 0f) {
+                scope.launch {
+                    try {
+                        client.sendMove(dx, dy)
+                    } catch (e: Exception) {
+                        
+                        android.util.Log.e("AirMouse", "sendMove failed", e)
+                    }
+                }
+            }
+        } else {
+            android.util.Log.w("AirMouse", "udpClient is null, not sending")
+        }
+    }
+    
+
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(text = "AIR MOUSE", fontSize = 24.sp, fontWeight = FontWeight.Bold)
+
+        
+        OutlinedTextField(
+            value = ipAddress,
+            onValueChange = { ipAddress = it },
+            label = { Text("Laptop IP Address") },
+            modifier = Modifier.fillMaxWidth(),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = Color.White,
+                unfocusedContainerColor = Color.White,
+                disabledContainerColor = Color.White
+            )
+        )
+
+        
+        Box(
+            modifier = Modifier
+                .size(250.dp)
+                .background(Color.DarkGray),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .offset(x = xOffset.dp, y = yOffset.dp)
+                    .size(30.dp)
+                    .background(
+                        when {
+                            clickStatus == "CLICKED!" -> Color.Red
+                            scrollStatus != "NO SCROLL" -> Color.Blue
+                            else -> Color.Green
+                        }
+                    )
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Text(text = clickStatus, color = if (clickStatus == "CLICKED!") Color.Red else Color.Black)
+            Text(
+                text = scrollStatus,
+                color = when (scrollStatus) {
+                    "SCROLL UP" -> Color.Blue
+                    "SCROLL DOWN" -> Color.Blue
+                    else -> Color.Black
+                }
+            )
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Button(
+                onClick = {
+                    udpClient = UdpClient(ipAddress)
+                    sensorManager.calibrationFlag = false
+                    yawPrev = yaw
+                    rollPrev = roll
+                    
+                    
+                    isRunning = !isRunning },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isRunning) Color.Red else Color.Green
+                )
+            ) {
+                Text(if (isRunning) "STOP MOUSE" else "START MOUSE")
+            }
+            
+
+            Button(onClick = {
+                
+                showCalibrationDialog = true
+                sensorManager.calibrationFlag = true
+                if (!isRunning) {
+                    sensorManager.startListening()
+                }
+                sensorManager.setReferenceOrientation()
+
+            }) {
+                Text("CALIBRATE")
+            }
+        }
+
+        Surface(color = Color.LightGray, modifier = Modifier.fillMaxWidth()) {
+            Column(modifier = Modifier.padding(8.dp)) {
+                Text(text = "Gyro: [%.2f, %.2f, %.2f]".format(gyroData[0], gyroData[1], gyroData[2]))
+                Text(text = "Accel: [%.2f, %.2f, %.2f]".format(accelData[0], accelData[1], accelData[2]))
+                Text(text = "Mag: [%.2f, %.2f, %.2f]".format(magData[0], magData[1], magData[2]))
+            }
+        }
+    }
+
+    if (showCalibrationDialog) {
+        CalibrationScreen(
+            sensorManager = sensorManager,
+            onDismiss = {
+                showCalibrationDialog = false
+                if (!isRunning) {
+                    sensorManager.stopListening()
+                }
+            }
+        )
+    }
+}
+
+@Composable
+fun CalibrationScreen(sensorManager: AirMouseSensorManager, onDismiss: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var gyroStatusText by remember { mutableStateOf("Ready to collect.") }
+    var isGyroCalibrating by remember { mutableStateOf(false) }
+
+    
+    val registeredAccelPositions = remember { mutableStateListOf(*Array(6) { "Not recorded" }) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.medium,
+            color = MaterialTheme.colorScheme.background,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+                .heightIn(max = 550.dp) 
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()), 
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text("Calibration Data Gathering", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(16.dp))
+
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("1. Gyroscope Data Gathering", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Keep the phone completely still on a flat surface.", fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    isGyroCalibrating = true
+                                    sensorManager.gyroSamples.clear() 
+                                    sensorManager.isCollectingGyroSamples = true
+
+                                    
+                                    for (i in 3 downTo 1) {
+                                        gyroStatusText = "Collecting raw data... $i s left."
+                                        delay(1000)
+                                    }
+
+                                    sensorManager.isCollectingGyroSamples = false
+                                    isGyroCalibrating = false
+                                    sensorManager.computeGyroBiasFromSamples()
+                                    gyroStatusText = "Done! Saved ${sensorManager.gyroSamples.size} raw samples for Member 2."
+                                }
+                            },
+                            enabled = !isGyroCalibrating,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isGyroCalibrating) "Recording..." else "Calibrate Gyro (Collect 3s)")
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(text = gyroStatusText, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("2. Accelerometer 6-Pos Gathering", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Place phone flat in 6 physical orientations (X+, X-, Y+, Y-, Z+, Z-). Click Record for each state.", fontSize = 11.sp)
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val orientations = listOf(
+                            "Pos 1: X+ axis up", "Pos 2: X- axis up",
+                            "Pos 3: Y+ axis up", "Pos 4: Y- axis up",
+                            "Pos 5: Z+ axis up", "Pos 6: Z- axis up"
+                        )
+
+                        orientations.forEachIndexed { index, label ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(label, fontSize = 12.sp, modifier = Modifier.weight(1f))
+                                Button(
+                                    onClick = {
+                                        sensorManager.recordAccelPosition(index) 
+                                        val recorded = sensorManager.accelPositions[index]
+                                        registeredAccelPositions[index] = "[%.2f, %.2f, %.2f]".format(recorded[0], recorded[1], recorded[2])
+                                    },
+                                    modifier = Modifier.padding(start = 4.dp)
+                                ) {
+                                    Text("Record", fontSize = 11.sp)
+                                }
+                            }
+                            Text(
+                                text = "Saved: ${registeredAccelPositions[index]}",
+                                fontSize = 11.sp,
+                                color = if (registeredAccelPositions[index] == "Not recorded") Color.Gray else Color.DarkGray,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            
+                            sensorManager.computeAccelCalibration()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Compute Accel Calibration")
+                    }
+                }
+                
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                
+                var magStatusText by remember { mutableStateOf("Ready. Rotate phone in all directions.") }
+                var isMagCalibrating by remember { mutableStateOf(false) }
+
+                Card(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text(
+                            "3. Magnetometer Calibration (5s)",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Move phone in a \"figure 8\" and rotate in all directions for 5 seconds.",
+                            fontSize = 11.sp
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    isMagCalibrating = true
+                                    sensorManager.isCollectingMagSamples = true
+                                    
+                                    sensorManager.magMin = floatArrayOf(
+                                        Float.MAX_VALUE, Float.MAX_VALUE, Float.MAX_VALUE
+                                    )
+                                    sensorManager.magMax = floatArrayOf(
+                                        Float.MIN_VALUE, Float.MIN_VALUE, Float.MIN_VALUE
+                                    )
+
+                                    for (i in 5 downTo 1) {
+                                        magStatusText = "Collecting mag data... $i s left."
+                                        delay(1000)
+                                    }
+
+                                    
+                                    sensorManager.computeMagCalibration()
+                                    isMagCalibrating = false
+                                    sensorManager.isCollectingMagSamples = false
+                                    magStatusText = "Mag calibration done."
+                                }
+                            },
+                            enabled = !isMagCalibrating,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (isMagCalibrating) "Recording..." else "Calibrate Mag (Collect 5s)")
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = magStatusText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
+                    Text("CLOSE & BACK TO MOUSE")
+                }
+            }
+        }
+    }
+}
